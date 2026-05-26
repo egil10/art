@@ -77,11 +77,26 @@ function recentCap(poolSize: number) {
   return Math.max(6, Math.min(poolSize - 6, 220));
 }
 
+function recentArtistCap(distinctArtists: number) {
+  // Smaller than the painting window — we want to discourage back-to-back
+  // artists but still let popular ones recur. Scales with the artist count.
+  if (distinctArtists <= 6) return Math.max(2, distinctArtists - 2);
+  return Math.max(4, Math.min(Math.floor(distinctArtists / 4), 14));
+}
+
 type Round = {
   painting: Painting;
   choices: string[];
   target: string;
 };
+
+type ArtistFreq = Map<string, number>;
+
+export function buildArtistFreq(pool: Painting[]): ArtistFreq {
+  const m: ArtistFreq = new Map();
+  for (const p of pool) m.set(p.artist, (m.get(p.artist) || 0) + 1);
+  return m;
+}
 
 function buildRound(
   painting: Painting,
@@ -93,24 +108,76 @@ function buildRound(
   return { painting, choices, target };
 }
 
+function pickPainting(
+  pool: Painting[],
+  recent: Set<string>,
+  recentArtists: string[],
+  artistFreq: ArtistFreq,
+  r: () => number,
+): Painting {
+  // Map artist -> recency rank (0 = oldest tracked, N-1 = most recent).
+  const N = recentArtists.length;
+  const rank = new Map<string, number>();
+  for (let i = 0; i < N; i++) rank.set(recentArtists[i], i);
+
+  // Sample K distinct candidates, then pick proportional to their weights.
+  // K is small relative to the pool, but large enough that the weighting
+  // actually has variety to choose from.
+  const K = Math.min(32, pool.length);
+  const seen = new Set<string>();
+  const cands: Painting[] = [];
+  const ws: number[] = [];
+  let total = 0;
+  let tries = 0;
+  while (cands.length < K && tries < K * 4) {
+    const c = pool[Math.floor(r() * pool.length)];
+    tries++;
+    if (seen.has(c.id)) continue;
+    seen.add(c.id);
+
+    let w = 1;
+    // Painting-level penalty — very strong (effectively excludes) but not
+    // zero so we still recover gracefully on tiny pools.
+    if (recent.has(c.id)) w *= 0.03;
+    // Artist-level recency penalty — most-recent gets the strongest hit and
+    // it decays linearly back toward 1 as the artist falls out of the window.
+    const ri = rank.get(c.artist);
+    if (ri !== undefined && N > 0) {
+      const dist = N - ri; // 1 = most recent, N = oldest tracked
+      w *= Math.max(0.12, dist / (N + 0.5));
+    }
+    // Pool balance: under-represented artists are slightly favored, so a
+    // painter with 4 works shows up more often per painting than one with
+    // 40 — without swamping the headline names entirely.
+    const freq = artistFreq.get(c.artist) || 1;
+    w *= 1 / Math.sqrt(freq);
+
+    cands.push(c);
+    ws.push(w);
+    total += w;
+  }
+
+  if (cands.length === 0 || total <= 0) {
+    return pool[Math.floor(r() * pool.length)];
+  }
+
+  let u = r() * total;
+  for (let i = 0; i < cands.length; i++) {
+    u -= ws[i];
+    if (u <= 0) return cands[i];
+  }
+  return cands[cands.length - 1];
+}
+
 function pickRound(
   pool: Painting[],
   mode: GameMode,
   recent: Set<string>,
+  recentArtists: string[],
+  artistFreq: ArtistFreq,
   r: () => number,
 ): Round {
-  let p: Painting | null = null;
-  // Scale our search effort with how restrictive `recent` is — for small
-  // pools we need more tries to find an unseen one.
-  const tries = Math.min(80, Math.max(20, recent.size));
-  for (let i = 0; i < tries; i++) {
-    const cand = pool[Math.floor(r() * pool.length)];
-    if (!recent.has(cand.id)) {
-      p = cand;
-      break;
-    }
-  }
-  if (!p) p = pool[Math.floor(r() * pool.length)];
+  const p = pickPainting(pool, recent, recentArtists, artistFreq, r);
   return buildRound(p, pool, mode, r);
 }
 
@@ -118,6 +185,8 @@ type State = {
   queue: Round[];
   current: Round | null;
   recent: Set<string>;
+  /** Artist names in the order they were shown — oldest first. */
+  recentArtists: string[];
   /** IDs of paintings answered incorrectly, oldest first. */
   wrong: string[];
   picked: string | null;
@@ -129,12 +198,23 @@ type State = {
   seed: number;
 };
 
-function makeInitial(pool: Painting[], mode: GameMode, seed: number): State {
+function trimRecentArtists(arr: string[], cap: number): string[] {
+  if (arr.length <= cap) return arr;
+  return arr.slice(arr.length - cap);
+}
+
+function makeInitial(
+  pool: Painting[],
+  mode: GameMode,
+  artistFreq: ArtistFreq,
+  seed: number,
+): State {
   if (pool.length === 0) {
     return {
       queue: [],
       current: null,
       recent: new Set(),
+      recentArtists: [],
       wrong: [],
       picked: null,
       phase: "idle",
@@ -146,11 +226,32 @@ function makeInitial(pool: Painting[], mode: GameMode, seed: number): State {
     };
   }
   const r = rng(seed);
-  const queue = Array.from({ length: 4 }, () => pickRound(pool, mode, new Set(), r));
+  // Build the lookahead queue while keeping each pick weighted against the
+  // already-picked recents — otherwise the prefetched 3 might all be by the
+  // same painter.
+  const recent = new Set<string>();
+  const recentArtists: string[] = [];
+  const artistCap = recentArtistCap(artistFreq.size);
+  const paintingCap = recentCap(pool.length);
+  const rounds: Round[] = [];
+  for (let i = 0; i < 4; i++) {
+    const round = pickRound(pool, mode, recent, recentArtists, artistFreq, r);
+    rounds.push(round);
+    recent.add(round.painting.id);
+    if (recent.size > paintingCap) {
+      const oldest = recent.values().next().value;
+      if (oldest) recent.delete(oldest);
+    }
+    recentArtists.push(round.painting.artist);
+    if (recentArtists.length > artistCap) recentArtists.shift();
+  }
   return {
-    queue: queue.slice(1),
-    current: queue[0],
-    recent: new Set([queue[0].painting.id]),
+    queue: rounds.slice(1),
+    current: rounds[0],
+    // Reset the painting/artist windows to just the displayed round so the
+    // prefetched look-ahead doesn't double-penalize early picks.
+    recent: new Set([rounds[0].painting.id]),
+    recentArtists: [rounds[0].painting.artist],
     wrong: [],
     picked: null,
     phase: "idle",
@@ -164,8 +265,20 @@ function makeInitial(pool: Painting[], mode: GameMode, seed: number): State {
 
 type Action =
   | { type: "answer"; choice: string }
-  | { type: "next"; pool: Painting[]; mode: GameMode; review: boolean }
-  | { type: "reset"; pool: Painting[]; mode: GameMode; seed: number };
+  | {
+      type: "next";
+      pool: Painting[];
+      mode: GameMode;
+      artistFreq: ArtistFreq;
+      review: boolean;
+    }
+  | {
+      type: "reset";
+      pool: Painting[];
+      mode: GameMode;
+      artistFreq: ArtistFreq;
+      seed: number;
+    };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -195,7 +308,7 @@ function reducer(state: State, action: Action): State {
       };
     }
     case "next": {
-      const { pool, mode, review } = action;
+      const { pool, mode, artistFreq, review } = action;
       if (pool.length === 0) return state;
       const r = rng((state.seed + state.total * 7919) | 0);
 
@@ -217,11 +330,36 @@ function reducer(state: State, action: Action): State {
 
       const queue = state.queue.slice();
       if (!nextRound) {
-        while (queue.length < 1) queue.push(pickRound(pool, mode, state.recent, r));
+        while (queue.length < 1) {
+          queue.push(
+            pickRound(pool, mode, state.recent, state.recentArtists, artistFreq, r),
+          );
+        }
         nextRound = queue.shift()!;
       }
-      // Top up the look-ahead queue with fresh picks.
-      while (queue.length < 3) queue.push(pickRound(pool, mode, state.recent, r));
+      // Top up the look-ahead queue with fresh picks. Each new pick takes the
+      // newly-picked rounds into account so we don't end up with three works
+      // by the same painter sitting in the queue.
+      const provisionalRecent = new Set(state.recent);
+      provisionalRecent.add(nextRound.painting.id);
+      const provisionalArtists = [...state.recentArtists, nextRound.painting.artist];
+      for (const r2 of queue) {
+        provisionalRecent.add(r2.painting.id);
+        provisionalArtists.push(r2.painting.artist);
+      }
+      while (queue.length < 3) {
+        const round = pickRound(
+          pool,
+          mode,
+          provisionalRecent,
+          provisionalArtists,
+          artistFreq,
+          r,
+        );
+        queue.push(round);
+        provisionalRecent.add(round.painting.id);
+        provisionalArtists.push(round.painting.artist);
+      }
 
       const recent = new Set(state.recent);
       recent.add(nextRound.painting.id);
@@ -230,18 +368,24 @@ function reducer(state: State, action: Action): State {
         const arr = [...recent];
         for (let i = 0; i < arr.length - cap; i++) recent.delete(arr[i]);
       }
+      const artistCap = recentArtistCap(artistFreq.size);
+      const recentArtists = trimRecentArtists(
+        [...state.recentArtists, nextRound.painting.artist],
+        artistCap,
+      );
       return {
         ...state,
         current: nextRound,
         queue,
         recent,
+        recentArtists,
         wrong,
         picked: null,
         phase: "idle",
       };
     }
     case "reset":
-      return makeInitial(action.pool, action.mode, action.seed);
+      return makeInitial(action.pool, action.mode, action.artistFreq, action.seed);
   }
 }
 
@@ -262,10 +406,11 @@ export function Quiz({
     () => paintingsForMode(paintingsFor(paintings, category), mode),
     [paintings, category, mode],
   );
+  const artistFreq = useMemo(() => buildArtistFreq(pool), [pool]);
   const [state, dispatch] = useReducer(
     reducer,
     null,
-    () => makeInitial(pool, mode, Date.now() & 0x7fffffff),
+    () => makeInitial(pool, mode, artistFreq, Date.now() & 0x7fffffff),
   );
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [imgReady, setImgReady] = useState(false);
@@ -319,6 +464,10 @@ export function Quiz({
   useEffect(() => {
     poolRef.current = pool;
   }, [pool]);
+  const artistFreqRef = useRef(artistFreq);
+  useEffect(() => {
+    artistFreqRef.current = artistFreq;
+  }, [artistFreq]);
 
   const categoryRef = useRef(category);
   const modeRef = useRef(mode);
@@ -330,12 +479,13 @@ export function Quiz({
         type: "reset",
         pool,
         mode,
+        artistFreq,
         seed: Date.now() & 0x7fffffff,
       });
       setImgReady(false);
       setReported(false);
     }
-  }, [category, mode, pool]);
+  }, [category, mode, pool, artistFreq]);
 
   useEffect(() => {
     for (const r of state.queue.slice(0, 3)) {
@@ -362,7 +512,7 @@ export function Quiz({
         }
       } else if (e.key === "Enter" || e.key === " " || e.key === "ArrowRight") {
         e.preventDefault();
-        dispatch({ type: "next", pool: poolRef.current, mode: modeRef.current, review: reviewRef.current });
+        dispatch({ type: "next", pool: poolRef.current, mode: modeRef.current, artistFreq: artistFreqRef.current, review: reviewRef.current });
       }
     }
     window.addEventListener("keydown", onKey);
@@ -374,7 +524,7 @@ export function Quiz({
     if (autoMode === "off") return;
     if (advanceTimer.current) clearTimeout(advanceTimer.current);
     advanceTimer.current = setTimeout(() => {
-      dispatch({ type: "next", pool: poolRef.current, mode: modeRef.current, review: reviewRef.current });
+      dispatch({ type: "next", pool: poolRef.current, mode: modeRef.current, artistFreq: artistFreqRef.current, review: reviewRef.current });
     }, AUTO_DELAYS[autoMode]);
     return () => {
       if (advanceTimer.current) clearTimeout(advanceTimer.current);
@@ -401,7 +551,7 @@ export function Quiz({
   }, [current]);
 
   const handleNext = useCallback(() => {
-    dispatch({ type: "next", pool: poolRef.current, mode: modeRef.current, review: reviewRef.current });
+    dispatch({ type: "next", pool: poolRef.current, mode: modeRef.current, artistFreq: artistFreqRef.current, review: reviewRef.current });
   }, []);
 
   if (!current) return null;
