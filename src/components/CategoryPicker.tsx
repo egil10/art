@@ -1,86 +1,143 @@
 "use client";
 
-import { CATEGORIES, paintingsFor, type CategoryKey } from "@/lib/paintings";
-import { Brush, ArrowRight } from "lucide-react";
-import { useMemo } from "react";
+import { CATEGORIES, paintingsFor, type CategoryKey, type Painting } from "@/lib/paintings";
+import { X, Check } from "lucide-react";
+import { useEffect, useMemo } from "react";
 
-const ICON_SIZE = 16;
+const GROUP_TITLES: Record<string, string> = {
+  starts: "Start here",
+  movement: "By movement",
+  subject: "By subject",
+  origin: "By origin",
+};
 
 export function CategoryPicker({
+  paintings,
+  current,
   onPick,
+  onClose,
 }: {
+  paintings: Painting[];
+  current: CategoryKey;
   onPick: (c: CategoryKey) => void;
+  onClose: () => void;
 }) {
   const stats = useMemo(() => {
     const m: Record<string, { count: number; artists: number }> = {};
     for (const c of CATEGORIES) {
-      const list = paintingsFor(c.key);
+      const list = paintingsFor(paintings, c.key);
       const a = new Set(list.map((p) => p.artist));
       m[c.key] = { count: list.length, artists: a.size };
     }
     return m;
+  }, [paintings]);
+
+  const grouped = useMemo(() => {
+    const g: Record<string, typeof CATEGORIES> = {};
+    for (const c of CATEGORIES) {
+      (g[c.group] = g[c.group] || []).push(c);
+    }
+    return g;
   }, []);
 
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 py-10 sm:py-14">
-      <div className="mb-8 sm:mb-12 animate-fade-up">
-        <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/55 px-3 py-1 text-xs font-medium text-ink/80 backdrop-blur border border-white/70">
-          <Brush size={ICON_SIZE - 2} />
-          Canvas
-        </div>
-        <h1 className="text-3xl sm:text-5xl font-semibold tracking-tight text-ink">
-          Guess the painter.
-        </h1>
-        <p className="mt-2 max-w-md text-sm sm:text-base text-ink-muted">
-          An endless multiple-choice quiz over a thousand of the world&rsquo;s most famous
-          paintings. Pick a collection to begin.
-        </p>
-      </div>
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-6 animate-fade-in"
+    >
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/20 backdrop-blur-sm"
+      />
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 animate-fade-up">
-        {CATEGORIES.map((c) => {
-          const s = stats[c.key];
-          return (
+      <div className="relative w-full max-w-2xl animate-fade-up">
+        <div className="glass-strong rounded-3xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                Collections
+              </div>
+              <div className="text-lg font-semibold text-ink">Pick a set</div>
+            </div>
             <button
-              key={c.key}
-              onClick={() => onPick(c.key)}
-              className="group relative overflow-hidden rounded-2xl border border-white/70 bg-white/60 p-4 text-left backdrop-blur transition hover:bg-white/85 focus-ring"
+              onClick={onClose}
+              aria-label="Close"
+              className="grid h-9 w-9 place-items-center rounded-full bg-black/[0.05] text-ink/70 transition hover:bg-black/[0.08] hover:text-ink focus-ring"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-ink">
-                    {c.label}
-                  </div>
-                  <div className="text-xs text-ink-muted">{c.hint}</div>
-                </div>
-                <ArrowRight
-                  size={16}
-                  className="mt-1 text-ink-muted transition group-hover:translate-x-0.5 group-hover:text-ink"
-                />
-              </div>
-              <div className="mt-4 flex items-center gap-3 text-[11px] text-ink-muted">
-                <span>
-                  <span className="tabular-nums font-semibold text-ink">
-                    {s.count.toLocaleString()}
-                  </span>{" "}
-                  paintings
-                </span>
-                <span className="h-1 w-1 rounded-full bg-black/15" />
-                <span>
-                  <span className="tabular-nums font-semibold text-ink">
-                    {s.artists.toLocaleString()}
-                  </span>{" "}
-                  artists
-                </span>
-              </div>
+              <X size={16} />
             </button>
-          );
-        })}
-      </div>
+          </div>
 
-      <p className="mt-10 text-center text-[11px] text-ink-muted">
-        Paintings &amp; metadata from Wikimedia · Press a number or tap to answer
-      </p>
+          <div className="max-h-[70vh] overflow-y-auto px-3 pb-4">
+            {(["starts", "movement", "subject", "origin"] as const).map((group) => (
+              <div key={group} className="mb-3">
+                <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
+                  {GROUP_TITLES[group]}
+                </div>
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                  {grouped[group].map((c) => {
+                    const s = stats[c.key];
+                    const active = current === c.key;
+                    return (
+                      <button
+                        key={c.key}
+                        onClick={() => onPick(c.key)}
+                        className={
+                          "group flex items-center justify-between rounded-2xl border px-3 py-2.5 text-left transition focus-ring " +
+                          (active
+                            ? "border-ink/15 bg-ink text-white"
+                            : "border-white/70 bg-white/55 backdrop-blur hover:bg-white/85")
+                        }
+                      >
+                        <div className="min-w-0">
+                          <div
+                            className={
+                              "text-sm font-semibold " +
+                              (active ? "text-white" : "text-ink")
+                            }
+                          >
+                            {c.label}
+                          </div>
+                          <div
+                            className={
+                              "text-[11px] " +
+                              (active ? "text-white/70" : "text-ink-muted")
+                            }
+                          >
+                            {c.hint}
+                          </div>
+                        </div>
+                        <div
+                          className={
+                            "flex items-center gap-2 text-[11px] tabular-nums " +
+                            (active ? "text-white/70" : "text-ink-muted")
+                          }
+                        >
+                          <span>
+                            {s.count.toLocaleString()} · {s.artists}
+                          </span>
+                          {active && <Check size={14} />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

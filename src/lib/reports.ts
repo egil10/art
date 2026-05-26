@@ -33,6 +33,11 @@ export function reportPainting(p: Painting) {
   localStorage.setItem(KEY, JSON.stringify(list));
 }
 
+export function isReported(id: string): boolean {
+  if (typeof window === "undefined") return false;
+  return getReports().some((r) => r.id === id);
+}
+
 export function clearReports() {
   if (typeof window === "undefined") return;
   localStorage.removeItem(KEY);
