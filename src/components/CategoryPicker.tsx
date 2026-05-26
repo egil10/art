@@ -79,7 +79,7 @@ export function CategoryPicker({
             </button>
           </div>
 
-          <div className="max-h-[70vh] overflow-y-auto px-3 pb-4">
+          <div className="max-h-[70vh] overflow-y-auto px-3 pb-2">
             {(["starts", "movement", "subject", "origin"] as const).map((group) => (
               <div key={group} className="mb-3">
                 <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
@@ -135,6 +135,12 @@ export function CategoryPicker({
                 </div>
               </div>
             ))}
+          </div>
+
+          <div className="border-t border-black/[0.05] bg-white/40 px-5 py-2.5 text-[11px] text-ink-muted">
+            <span className="font-semibold text-ink/70">By origin</span> folds
+            historical states into their modern country — Caravaggio shows up
+            under Italian, Dürer under German, Munch under Norwegian.
           </div>
         </div>
       </div>
