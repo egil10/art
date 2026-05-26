@@ -2,7 +2,7 @@
 
 An endless multiple-choice quiz over thousands of the world's most famous paintings, plus a searchable gallery. Pick a painting, guess the painter.
 
-- **~8,300 paintings · 530+ distinct artists** — sourced from Wikidata + Wikimedia Commons, ≥4 paintings per painter
+- **~10,200 paintings · 530+ distinct artists** — sourced from Wikidata + Wikimedia Commons, ≥4 paintings per painter
 - **20 collections** — popular, all, plus filters by movement (Renaissance, Baroque, Impressionism…), subject (portraits, landscapes, still life, religious) and origin (French, Italian, Dutch, Spanish, German, British, American, Russian)
 - **Quiz** with keyboard-first controls (`1`–`4`, `Enter`), image preloading, glass UI, fixed-height reveal panel (no layout jump), per-painting report flag
 - **/gallery** — searchable thumbnail grid with category filters and a painting detail view

@@ -50,9 +50,10 @@ async function sparql(query, attempts = 4) {
   throw lastErr;
 }
 
-const TARGET_PAINTINGS = 10000;
+const TARGET_PAINTINGS = 12000;
 const PER_ARTIST_MIN = 4;
-const PER_ARTIST_MAX = 35;
+const PER_ARTIST_MAX = 55;
+const PAINTER_SEED_LIMIT = 3500;
 
 // Sitelink tiers — each query is small enough to finish under Wikidata's 60s timeout.
 const TIERS = [
@@ -255,11 +256,32 @@ function categorize({ movements, country, year, genres }) {
   return [...cats];
 }
 
-async function phaseArtistExpansion(seedPaintings) {
-  // For every artist we have at least one painting for, pull ALL their paintings
-  // (up to PER_ARTIST_MAX) — so the dataset grows by depth, not just headline fame.
-  const artistQids = new Set(seedPaintings.map((p) => p.creatorQid));
-  const ids = [...artistQids];
+async function phaseTopPainters() {
+  // Query the most-linked painters directly so we don't miss artists whose
+  // individual works are well-known but never crossed our headline tiers.
+  console.log(`Phase A0 — top painters by sitelinks (limit ${PAINTER_SEED_LIMIT})…`);
+  const query = `
+SELECT ?painter ?painterLabel WHERE {
+  ?painter wdt:P31 wd:Q5 ;
+           wdt:P106 wd:Q1028181 ;
+           wikibase:sitelinks ?sitelinks .
+  FILTER (?sitelinks >= 5)
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+}
+ORDER BY DESC(?sitelinks)
+LIMIT ${PAINTER_SEED_LIMIT}
+`;
+  const data = await sparql(query);
+  const ids = new Set();
+  for (const b of data.results.bindings) {
+    if (b.painter?.value) ids.add(b.painter.value);
+  }
+  console.log(`  ↳ ${ids.size} painters`);
+  return ids;
+}
+
+async function phaseArtistExpansion(creatorQids) {
+  const ids = [...creatorQids];
   console.log(`Phase A2 — expanding ${ids.length} artists for deep catalog…`);
   const byId = new Map();
   const CHUNK = 60;
@@ -276,7 +298,7 @@ SELECT ?painting ?paintingLabel ?image ?creator ?creatorLabel ?inception ?siteli
   OPTIONAL { ?painting wdt:P571 ?inception . }
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
-LIMIT 6000
+LIMIT 8000
 `;
     try {
       const data = await sparql(query);
@@ -309,8 +331,18 @@ LIMIT 6000
 }
 
 async function main() {
-  const phaseAList = await phaseA();
-  const expanded = await phaseArtistExpansion(phaseAList);
+  const [phaseAList, topPainterIds] = await Promise.all([
+    phaseA(),
+    phaseTopPainters(),
+  ]);
+
+  // Union of seed painters: those who surfaced in the headline tiers,
+  // plus the top-N painters by sitelinks (regardless of any single work's fame).
+  const seedPainters = new Set(topPainterIds);
+  for (const p of phaseAList) seedPainters.add(p.creatorQid);
+  console.log(`Seed painters: ${seedPainters.size}`);
+
+  const expanded = await phaseArtistExpansion(seedPainters);
 
   // Merge: dedup by id, prefer the higher sitelinks count
   const merged = new Map();
