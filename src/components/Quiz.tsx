@@ -431,35 +431,6 @@ export function Quiz({
             <span className="hidden sm:inline">Gallery</span>
           </Link>
           <button
-            onClick={handleReport}
-            disabled={reported}
-            className={
-              "pill focus-ring " +
-              (reported
-                ? "cursor-default bg-black/5 text-ink-muted"
-                : "glass text-ink/80 hover:text-ink")
-            }
-            aria-label="Report this painting — copies it to clipboard"
-            title="Flag this painting and copy its info to your clipboard"
-          >
-            <Flag size={14} strokeWidth={2} />
-            <span className="hidden sm:inline">
-              {reported ? "Copied" : "Report"}
-            </span>
-          </button>
-          {reportCount > 0 && (
-            <button
-              onClick={() => setReportsOpen(true)}
-              className="pill-glass focus-ring"
-              aria-label={`Open report queue (${reportCount})`}
-              title="Open report queue"
-            >
-              <span className="tabular-nums text-[11px] font-semibold">
-                {reportCount}
-              </span>
-            </button>
-          )}
-          <button
             onClick={cycleAutoMode}
             className="pill-glass focus-ring"
             aria-label={`Auto-advance: ${AUTO_LABELS[autoMode]} — tap to cycle`}
@@ -501,6 +472,36 @@ export function Quiz({
           <Stat label="Score" value={state.score} />
           <Stat label="Streak" value={state.streak} accent={state.streak >= 3} />
           <Stat label="Acc" value={`${accuracy}%`} subtle />
+          <button
+            onClick={() => {
+              if (reported) setReportsOpen(true);
+              else handleReport();
+            }}
+            className={
+              "relative grid h-8 w-8 place-items-center rounded-full border focus-ring transition " +
+              (reported
+                ? "border-ink/15 bg-ink text-white"
+                : "border-white/70 bg-white/55 text-ink/70 backdrop-blur hover:bg-white/85 hover:text-ink")
+            }
+            aria-label={
+              reported
+                ? `Open report queue (${reportCount})`
+                : "Report this painting — copies it to clipboard"
+            }
+            title={
+              reported
+                ? `Reported — tap to view queue (${reportCount})`
+                : "Flag and copy this painting"
+            }
+          >
+            <Flag size={14} strokeWidth={2} />
+            {reportCount > 0 && !reported && (
+              <span
+                aria-hidden
+                className="absolute right-0 top-0 h-2 w-2 rounded-full bg-ink ring-2 ring-canvas"
+              />
+            )}
+          </button>
         </div>
       </div>
 
