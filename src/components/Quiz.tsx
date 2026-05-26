@@ -19,6 +19,7 @@ import {
   Loader2,
   Images,
   ExternalLink,
+  Hash,
 } from "lucide-react";
 import {
   buildChoices,
@@ -186,7 +187,6 @@ export function Quiz({
     }
   }, [category, pool]);
 
-  // Preload upcoming images.
   useEffect(() => {
     for (const r of state.queue.slice(0, 3)) {
       const img = new Image();
@@ -200,7 +200,6 @@ export function Quiz({
     setReported(false);
   }, [state.current?.painting.id]);
 
-  // Keyboard shortcuts.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!state.current) return;
@@ -220,13 +219,12 @@ export function Quiz({
     return () => window.removeEventListener("keydown", onKey);
   }, [state.current, state.phase]);
 
-  // Auto-advance after answer.
   useEffect(() => {
     if (state.phase !== "answered") return;
     if (advanceTimer.current) clearTimeout(advanceTimer.current);
     advanceTimer.current = setTimeout(() => {
       dispatch({ type: "next", pool: poolRef.current });
-    }, 2200);
+    }, 3000);
     return () => {
       if (advanceTimer.current) clearTimeout(advanceTimer.current);
     };
@@ -245,11 +243,16 @@ export function Quiz({
     setReported(true);
   }, [current]);
 
+  const handleNext = useCallback(() => {
+    dispatch({ type: "next", pool: poolRef.current });
+  }, []);
+
   if (!current) return null;
   const answered = state.phase === "answered";
+  const correct = state.picked === current.painting.artist;
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 pb-12 pt-3 sm:pt-6">
+    <div className="mx-auto w-full max-w-5xl px-4 pb-12 pt-3 sm:pt-6">
       {/* Top status bar */}
       <div className="flex items-center justify-between gap-2 pb-3">
         <div className="flex items-center gap-1.5">
@@ -261,7 +264,11 @@ export function Quiz({
             <Layers size={15} strokeWidth={2} />
             <span>{categoryLabel(category)}</span>
           </button>
-          <Link href="/gallery" className="pill-glass focus-ring" aria-label="Open gallery">
+          <Link
+            href="/gallery"
+            className="pill-glass focus-ring"
+            aria-label="Open gallery"
+          >
             <Images size={15} strokeWidth={2} />
             <span className="hidden sm:inline">Gallery</span>
           </Link>
@@ -274,45 +281,86 @@ export function Quiz({
         </div>
       </div>
 
-      {/* Painting */}
-      <div className="relative animate-pop">
-        <div className="glass-strong overflow-hidden rounded-[28px]">
-          <div className="relative aspect-[4/5] sm:aspect-[16/11] w-full bg-canvas-warm">
-            {!imgReady && (
-              <div className="absolute inset-0 grid place-items-center text-ink-muted">
-                <Loader2 className="animate-spin" size={20} />
-              </div>
-            )}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              key={current.painting.id}
-              src={imageUrl(current.painting.image, 1280)}
-              alt=""
-              onLoad={() => setImgReady(true)}
-              onError={() => setImgReady(true)}
-              className={
-                "h-full w-full object-contain transition duration-500 " +
-                (imgReady ? "opacity-100" : "opacity-0")
-              }
-            />
+      {/* Painting + side panel row */}
+      <div className="flex flex-col items-stretch gap-3 md:flex-row">
+        {/* Painting card */}
+        <div className="relative min-w-0 flex-1 animate-pop">
+          <div className="glass-strong relative overflow-hidden rounded-[28px]">
+            <div className="relative aspect-[4/5] w-full bg-canvas-warm sm:aspect-[5/4]">
+              {!imgReady && (
+                <div className="absolute inset-0 grid place-items-center text-ink-muted">
+                  <Loader2 className="animate-spin" size={20} />
+                </div>
+              )}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                key={current.painting.id}
+                src={imageUrl(current.painting.image, 1280)}
+                alt=""
+                onLoad={() => setImgReady(true)}
+                onError={() => setImgReady(true)}
+                className={
+                  "h-full w-full object-contain transition duration-500 " +
+                  (imgReady ? "opacity-100" : "opacity-0")
+                }
+              />
 
-            <button
-              onClick={handleReport}
-              disabled={reported}
-              className={
-                "absolute right-3 top-3 pill focus-ring " +
-                (reported
-                  ? "bg-black/5 text-ink-muted cursor-default"
-                  : "glass text-ink/70 hover:text-ink")
-              }
-              aria-label="Report this painting"
-              title="Report a wrong or bad image"
-            >
-              <Flag size={14} strokeWidth={2} />
-              <span className="text-xs">{reported ? "Thanks" : "Report"}</span>
-            </button>
+              <button
+                onClick={handleReport}
+                disabled={reported}
+                className={
+                  "absolute right-3 top-3 pill focus-ring " +
+                  (reported
+                    ? "cursor-default bg-black/5 text-ink-muted"
+                    : "glass text-ink/70 hover:text-ink")
+                }
+                aria-label="Report this painting"
+                title="Report a wrong or bad image"
+              >
+                <Flag size={14} strokeWidth={2} />
+                <span className="text-xs">{reported ? "Thanks" : "Report"}</span>
+              </button>
+
+              {/* Mobile reveal — overlay at bottom of painting */}
+              <div
+                aria-hidden={!answered}
+                className={
+                  "pointer-events-none absolute inset-x-2 bottom-2 transition-all duration-300 md:hidden " +
+                  (answered
+                    ? "translate-y-0 opacity-100"
+                    : "translate-y-2 opacity-0")
+                }
+              >
+                <div className="glass-strong pointer-events-auto rounded-2xl px-3 py-2.5">
+                  <CompactReveal
+                    painting={current.painting}
+                    correct={correct}
+                    onNext={handleNext}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
+
+        {/* Desktop side panel */}
+        <aside className="hidden md:flex md:w-[300px] md:shrink-0">
+          <div className="glass-strong flex w-full flex-col rounded-[28px] p-5">
+            {answered ? (
+              <SideReveal
+                painting={current.painting}
+                correct={correct}
+                onNext={handleNext}
+              />
+            ) : (
+              <IdleSidePanel
+                category={category}
+                total={state.total}
+                best={state.best}
+              />
+            )}
+          </div>
+        </aside>
       </div>
 
       {/* Choices */}
@@ -357,15 +405,6 @@ export function Quiz({
         })}
       </div>
 
-      {/* Reveal panel — reserved height so the layout never jumps */}
-      <RevealPanel
-        painting={current.painting}
-        correct={state.picked === current.painting.artist}
-        visible={answered}
-        onNext={() => dispatch({ type: "next", pool: poolRef.current })}
-        bestStreak={state.best}
-      />
-
       <p className="mt-4 text-center text-[11px] text-ink-muted">
         Press <Kbd>1</Kbd>–<Kbd>4</Kbd> to answer · <Kbd>Enter</Kbd> for next
       </p>
@@ -373,99 +412,154 @@ export function Quiz({
   );
 }
 
-function RevealPanel({
+function CompactReveal({
   painting,
   correct,
-  visible,
   onNext,
-  bestStreak,
 }: {
   painting: Painting;
   correct: boolean;
-  visible: boolean;
   onNext: () => void;
-  bestStreak: number;
 }) {
   return (
-    <div className="mt-4 min-h-[112px]">
-      {!visible ? (
-        <div className="grid h-[112px] place-items-center text-[11px] text-ink-muted">
-          <span>
-            Best streak <span className="text-ink font-medium">{bestStreak}</span>
-          </span>
+    <div className="flex items-center gap-3">
+      <div className="min-w-0 flex-1">
+        <div
+          className={
+            "text-[10px] font-semibold uppercase tracking-wider " +
+            (correct ? "text-green-700" : "text-red-700")
+          }
+        >
+          {correct ? "Correct" : painting.artist}
         </div>
-      ) : (
-        <div className="animate-fade-up rounded-2xl border border-white/70 bg-white/65 px-4 py-3 backdrop-blur">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div
-                className={
-                  "text-[11px] font-semibold uppercase tracking-wide " +
-                  (correct ? "text-green-700" : "text-red-700")
-                }
-              >
-                {correct ? "Correct" : "Not quite"}
-              </div>
-              <div className="mt-0.5 text-base font-semibold text-ink truncate">
-                {painting.title}
-              </div>
-              <div className="mt-0.5 text-sm text-ink/80 truncate">
-                {painting.artist}
-                {painting.year ? ` · ${painting.year}` : ""}
-              </div>
-
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-muted">
-                {painting.mv && (
-                  <Tag>
-                    <span className="text-ink/60">Movement</span>
-                    <span className="text-ink/85 font-medium">{painting.mv}</span>
-                  </Tag>
-                )}
-                {painting.g && (
-                  <Tag>
-                    <span className="text-ink/60">Genre</span>
-                    <span className="text-ink/85 font-medium">{painting.g}</span>
-                  </Tag>
-                )}
-                {painting.loc && (
-                  <Tag>
-                    <span className="text-ink/60">Location</span>
-                    <span className="text-ink/85 font-medium truncate max-w-[260px]">
-                      {painting.loc}
-                    </span>
-                  </Tag>
-                )}
-              </div>
-            </div>
-
-            <div className="flex shrink-0 flex-col items-end gap-1.5">
-              <a
-                href={wikipediaUrl(painting.id)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="pill-glass focus-ring text-[11px]"
-                title="Open on Wikipedia"
-              >
-                <ExternalLink size={12} />
-                <span>Wiki</span>
-              </a>
-              <button onClick={onNext} className="pill-solid focus-ring">
-                Next
-                <ArrowRight size={15} strokeWidth={2.2} />
-              </button>
-            </div>
-          </div>
+        <div className="truncate text-[13px] font-semibold text-ink">
+          {painting.title}
         </div>
-      )}
+        <div className="truncate text-[11px] text-ink-muted">
+          {[painting.year, painting.mv, painting.loc]
+            .filter(Boolean)
+            .join(" · ")}
+        </div>
+      </div>
+      <button
+        onClick={onNext}
+        className="pill-solid focus-ring shrink-0"
+        aria-label="Next painting"
+      >
+        Next
+        <ArrowRight size={14} strokeWidth={2.2} />
+      </button>
     </div>
   );
 }
 
-function Tag({ children }: { children: React.ReactNode }) {
+function SideReveal({
+  painting,
+  correct,
+  onNext,
+}: {
+  painting: Painting;
+  correct: boolean;
+  onNext: () => void;
+}) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-black/[0.04] px-2 py-0.5">
-      {children}
-    </span>
+    <div className="flex h-full animate-fade-up flex-col">
+      <div
+        className={
+          "inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider " +
+          (correct
+            ? "bg-green-100 text-green-800"
+            : "bg-red-100 text-red-800")
+        }
+      >
+        {correct ? <Check size={12} /> : <X size={12} />}
+        {correct ? "Correct" : "Not quite"}
+      </div>
+
+      <h2 className="mt-3 text-lg font-semibold leading-snug text-ink">
+        {painting.title}
+      </h2>
+      <div className="mt-1 text-sm text-ink/85">
+        {painting.artist}
+        {painting.year ? ` · ${painting.year}` : ""}
+      </div>
+
+      <dl className="mt-4 space-y-2 text-[12px]">
+        {painting.mv && <Row label="Movement" value={painting.mv} />}
+        {painting.g && <Row label="Genre" value={painting.g} />}
+        {painting.loc && <Row label="Location" value={painting.loc} />}
+      </dl>
+
+      <div className="flex-1" />
+      <div className="mt-4 flex items-center justify-between gap-2">
+        <a
+          href={wikipediaUrl(painting.id)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="pill-glass focus-ring text-[11px]"
+        >
+          <ExternalLink size={12} />
+          Wiki
+        </a>
+        <button onClick={onNext} className="pill-solid focus-ring">
+          Next
+          <ArrowRight size={15} strokeWidth={2.2} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function IdleSidePanel({
+  category,
+  total,
+  best,
+}: {
+  category: CategoryKey;
+  total: number;
+  best: number;
+}) {
+  return (
+    <div className="flex h-full flex-col text-sm">
+      <div className="inline-flex w-fit items-center gap-1.5 rounded-full bg-black/[0.05] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-ink/70">
+        <Hash size={12} />
+        Round {total + 1}
+      </div>
+      <div className="mt-3 text-base font-semibold text-ink">
+        Who painted this?
+      </div>
+      <p className="mt-1 text-[12px] text-ink-muted">
+        Pick the painter from the four below — or press
+        <span className="mx-1">
+          <Kbd>1</Kbd>
+        </span>
+        through
+        <span className="mx-1">
+          <Kbd>4</Kbd>
+        </span>
+        on your keyboard.
+      </p>
+
+      <div className="flex-1" />
+
+      <div className="space-y-2 text-[12px] text-ink-muted">
+        <Row label="Collection" value={categoryLabel(category)} />
+        <Row label="Best streak" value={String(best)} />
+      </div>
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="shrink-0 text-[11px] uppercase tracking-wider text-ink-muted">
+        {label}
+      </dt>
+      <dd className="min-w-0 truncate text-right text-[12px] font-medium text-ink">
+        {value}
+      </dd>
+    </div>
   );
 }
 
@@ -488,7 +582,7 @@ function Stat({
           ? "bg-amber-100/80 text-amber-900 backdrop-blur"
           : subtle
             ? "bg-black/[0.04] text-ink-muted"
-            : "bg-white/55 text-ink/80 backdrop-blur border border-white/70")
+            : "border border-white/70 bg-white/55 text-ink/80 backdrop-blur")
       }
     >
       {accent && <Sparkles size={12} />}
