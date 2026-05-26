@@ -746,7 +746,7 @@ export function Quiz({
       {/* Choices */}
       <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
         {current.choices.map((choice, i) => {
-          const isCorrect = choice === current.painting.artist;
+          const isCorrect = choice === current.target;
           const isPicked = state.picked === choice;
           return (
             <button
