@@ -49,16 +49,23 @@ import {
 import { ReportsModal } from "./ReportsModal";
 
 type Phase = "idle" | "answered";
-type AutoMode = "off" | "fast" | "slow";
+type AutoMode = "off" | "fast" | "slow" | "slower";
 
 const AUTO_KEY = "canvas.autoAdvance.v1";
 const REVIEW_KEY = "canvas.reviewWrong.v1";
-const AUTO_DELAYS: Record<AutoMode, number> = { off: 0, fast: 1000, slow: 3000 };
+const AUTO_DELAYS: Record<AutoMode, number> = {
+  off: 0,
+  fast: 1000,
+  slow: 3000,
+  slower: 5000,
+};
 const AUTO_LABELS: Record<AutoMode, string> = {
   off: "Manual",
   fast: "Auto 1s",
   slow: "Auto 3s",
+  slower: "Auto 5s",
 };
+const AUTO_ORDER: AutoMode[] = ["off", "fast", "slow", "slower"];
 // How often a re-surfaced wrong answer is preferred over a fresh random pick.
 const REVIEW_PROB = 0.35;
 // Cap the wrong-queue so it can't grow unboundedly across a long session.
@@ -273,7 +280,7 @@ export function Quiz({
   useEffect(() => {
     if (typeof window === "undefined") return;
     const v = localStorage.getItem(AUTO_KEY);
-    if (v === "off" || v === "fast" || v === "slow") setAutoMode(v);
+    if (v && (AUTO_ORDER as string[]).includes(v)) setAutoMode(v as AutoMode);
     setReview(localStorage.getItem(REVIEW_KEY) === "1");
   }, []);
 
@@ -299,7 +306,8 @@ export function Quiz({
 
   const cycleAutoMode = useCallback(() => {
     setAutoMode((m) => {
-      const next: AutoMode = m === "off" ? "fast" : m === "fast" ? "slow" : "off";
+      const i = AUTO_ORDER.indexOf(m);
+      const next = AUTO_ORDER[(i + 1) % AUTO_ORDER.length];
       if (typeof window !== "undefined") {
         localStorage.setItem(AUTO_KEY, next);
       }
@@ -440,8 +448,10 @@ export function Quiz({
               <Hand size={14} strokeWidth={2} />
             ) : autoMode === "fast" ? (
               <Zap size={14} strokeWidth={2} />
-            ) : (
+            ) : autoMode === "slow" ? (
               <Timer size={14} strokeWidth={2} />
+            ) : (
+              <Timer size={14} strokeWidth={2.4} />
             )}
             <span className="hidden sm:inline">{AUTO_LABELS[autoMode]}</span>
           </button>
