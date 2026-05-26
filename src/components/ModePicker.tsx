@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 import { X, Check, User, Type, Brush, Globe2, Calendar } from "lucide-react";
 import {
   GAME_MODES,
+  modeTarget,
   paintingsFor,
   paintingsForMode,
   type CategoryKey,
@@ -34,8 +35,16 @@ export function ModePicker({
 }) {
   const stats = useMemo(() => {
     const inCategory = paintingsFor(paintings, category);
-    const m: Record<string, number> = {};
-    for (const g of GAME_MODES) m[g.key] = paintingsForMode(inCategory, g.key).length;
+    const m: Record<string, { count: number; distinct: number }> = {};
+    for (const g of GAME_MODES) {
+      const pool = paintingsForMode(inCategory, g.key);
+      const distinct = new Set<string>();
+      for (const p of pool) {
+        const t = modeTarget(p, g.key);
+        if (t) distinct.add(t);
+      }
+      m[g.key] = { count: pool.length, distinct: distinct.size };
+    }
     return m;
   }, [paintings, category]);
 
@@ -82,8 +91,15 @@ export function ModePicker({
             {GAME_MODES.map((m) => {
               const Icon = MODE_ICONS[m.key];
               const active = m.key === current;
-              const count = stats[m.key];
-              const disabled = count < 8;
+              const s = stats[m.key];
+              // Need at least 4 distinct answers (for the four choices) and a
+              // pool big enough to keep variety across a session.
+              const disabled = s.count < 8 || s.distinct < 4;
+              const reason = s.distinct < 4
+                ? "Only one possible answer"
+                : s.count < 8
+                  ? "Not enough paintings"
+                  : null;
               return (
                 <li key={m.key}>
                   <button
@@ -111,7 +127,7 @@ export function ModePicker({
                         {m.label}
                       </span>
                       <span className={"block text-[11px] " + (active ? "text-white/70" : "text-ink-muted")}>
-                        {m.hint}
+                        {disabled && reason ? reason : m.hint}
                       </span>
                     </span>
                     <span
@@ -120,7 +136,7 @@ export function ModePicker({
                         (active ? "text-white/75" : "text-ink-muted")
                       }
                     >
-                      {disabled ? "—" : `${count.toLocaleString()}`}
+                      {disabled ? "—" : `${s.count.toLocaleString()}`}
                     </span>
                     {active && <Check size={14} className="ml-1 text-white" />}
                   </button>

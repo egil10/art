@@ -35,7 +35,9 @@ export type CategoryKey =
   | "german"
   | "british"
   | "american"
-  | "russian";
+  | "russian"
+  | "norwegian"
+  | "nordic";
 
 export const CATEGORIES: {
   key: CategoryKey;
@@ -67,6 +69,8 @@ export const CATEGORIES: {
   { key: "british", label: "British", hint: "Turner · Constable", group: "origin" },
   { key: "american", label: "American", hint: "Sargent · Hopper", group: "origin" },
   { key: "russian", label: "Russian", hint: "Repin · Kandinsky", group: "origin" },
+  { key: "norwegian", label: "Norwegian", hint: "Munch · Dahl · Werenskiold", group: "origin" },
+  { key: "nordic", label: "Nordic", hint: "Norway · Sweden · Denmark · Finland", group: "origin" },
 ];
 
 const CAT_LABELS: Record<string, string> = Object.fromEntries(
@@ -124,6 +128,7 @@ const COUNTRY_FROM_CAT: Record<string, string> = {
   british: "United Kingdom",
   american: "United States",
   russian: "Russia",
+  norwegian: "Norway",
 };
 
 function paintingCountry(p: Painting): string | null {

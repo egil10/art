@@ -240,6 +240,23 @@ function categorize({ movements, country, year, genres }) {
   if (c.includes("russian") || c === "russia" || c.includes("soviet")) cats.add("russian");
   if (c.includes("united kingdom") || c.includes("british") || c.includes("england") || c.includes("scotland")) cats.add("british");
 
+  // Norway, plus broader Nordic umbrella (Sweden, Denmark, Finland, Iceland,
+  // historical kingdoms like Denmark–Norway / Sweden–Norway).
+  const isNorway =
+    c === "norway" ||
+    c.includes("norwegian") ||
+    c === "denmark–norway" ||
+    c === "denmark-norway" ||
+    c === "union between sweden and norway" ||
+    c === "sweden–norway" ||
+    c === "sweden-norway";
+  const isSweden = c === "sweden" || c.includes("swedish");
+  const isDenmark = c === "denmark" || c.includes("danish");
+  const isFinland = c === "finland" || c.includes("finnish");
+  const isIceland = c === "iceland" || c.includes("icelandic");
+  if (isNorway) cats.add("norwegian");
+  if (isNorway || isSweden || isDenmark || isFinland || isIceland) cats.add("nordic");
+
   if (g.includes("portrait")) cats.add("portraits");
   if (g.includes("landscape")) cats.add("landscapes");
   if (g.includes("still life")) cats.add("stilllife");

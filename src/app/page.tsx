@@ -5,7 +5,13 @@ import { Loader2 } from "lucide-react";
 import { Quiz } from "@/components/Quiz";
 import { CategoryPicker } from "@/components/CategoryPicker";
 import { ModePicker } from "@/components/ModePicker";
-import type { CategoryKey, GameMode } from "@/lib/paintings";
+import {
+  modeTarget,
+  paintingsFor,
+  paintingsForMode,
+  type CategoryKey,
+  type GameMode,
+} from "@/lib/paintings";
 import { usePaintings } from "@/lib/usePaintings";
 
 const MODE_KEY = "canvas.mode.v1";
@@ -22,6 +28,24 @@ export default function Page() {
     const v = localStorage.getItem(MODE_KEY) as GameMode | null;
     if (v && VALID_MODES.includes(v)) setMode(v);
   }, []);
+
+  // If the active category × mode combo has too few distinct answers
+  // (e.g. "French" + Country mode → only France), fall back to Painter
+  // which is always well-defined.
+  useEffect(() => {
+    if (!paintings) return;
+    if (mode === "painter") return;
+    const pool = paintingsForMode(paintingsFor(paintings, category), mode);
+    const distinct = new Set<string>();
+    for (const p of pool) {
+      const t = modeTarget(p, mode);
+      if (t) distinct.add(t);
+    }
+    if (pool.length < 8 || distinct.size < 4) {
+      setMode("painter");
+      if (typeof window !== "undefined") localStorage.setItem(MODE_KEY, "painter");
+    }
+  }, [paintings, category, mode]);
 
   function handlePickMode(m: GameMode) {
     setMode(m);
@@ -62,10 +86,7 @@ export default function Page() {
         <CategoryPicker
           paintings={paintings}
           current={category}
-          onPick={(c) => {
-            setCategory(c);
-            setPickerOpen("none");
-          }}
+          onPick={(c) => setCategory(c)}
           onClose={() => setPickerOpen("none")}
         />
       )}

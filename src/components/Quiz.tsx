@@ -517,7 +517,16 @@ export function Quiz({
       <div className="flex flex-col items-stretch gap-3 md:flex-row">
         {/* Painting card */}
         <div className="relative min-w-0 flex-1 animate-pop">
-          <div className="glass-strong relative overflow-hidden rounded-[28px]">
+          <div
+            className={
+              "glass-strong relative overflow-hidden rounded-[28px] transition-shadow duration-300 " +
+              (answered
+                ? correct
+                  ? "ring-[3px] ring-green-400/70"
+                  : "ring-[3px] ring-red-400/70"
+                : "ring-0")
+            }
+          >
             <div className="relative aspect-[4/5] w-full bg-canvas-warm sm:aspect-[5/4]">
               {!imgReady && (
                 <div className="absolute inset-0 grid place-items-center text-ink-muted">
@@ -663,7 +672,10 @@ function CompactReveal({
   correct: boolean;
   onNext: () => void;
 }) {
-  const fallbackLine = [painting.year, painting.mv, painting.loc].filter(Boolean).join(" · ");
+  const showTitle = mode !== "title";
+  const subline = mode === "painter"
+    ? [painting.year, painting.mv, painting.loc].filter(Boolean).join(" · ")
+    : `${painting.artist}${painting.year ? " · " + painting.year : ""}`;
   return (
     <div className="flex items-center gap-3">
       <div className="min-w-0 flex-1">
@@ -673,13 +685,11 @@ function CompactReveal({
             (correct ? "text-green-700" : "text-red-700")
           }
         >
-          {correct ? "Correct" : `Answer: ${target}`}
+          {correct ? "Correct" : "Not quite"}
         </div>
-        <div className="truncate text-[13px] font-semibold text-ink">
-          {painting.title}
-        </div>
+        <div className="truncate text-[14px] font-bold text-ink">{target}</div>
         <div className="truncate text-[11px] text-ink-muted">
-          {mode === "painter" ? fallbackLine : `${painting.artist}${painting.year ? " · " + painting.year : ""}`}
+          {showTitle ? painting.title : subline}
         </div>
       </div>
       <button
@@ -707,6 +717,14 @@ function SideReveal({
   correct: boolean;
   onNext: () => void;
 }) {
+  // What's NOT already shown as the headline answer — render the painting's
+  // context underneath so the player sees the link between the image and the
+  // answer they should remember.
+  const showTitle = mode !== "title";
+  const showArtist = mode !== "painter";
+  const showYear = mode !== "decade" && painting.year;
+  const showMovement = mode !== "movement" && painting.mv;
+
   return (
     <div className="flex h-full animate-fade-up flex-col">
       <div
@@ -721,26 +739,37 @@ function SideReveal({
         {correct ? "Correct" : "Not quite"}
       </div>
 
-      {!correct && (
-        <div className="mt-3 inline-flex w-fit items-center gap-1 rounded-full bg-black/[0.04] px-2.5 py-1 text-[11px] text-ink">
-          <span className="text-ink-muted">{modeMeta(mode).label}</span>
-          <span className="font-semibold">{target}</span>
-        </div>
-      )}
-
-      <h2 className="mt-3 text-lg font-semibold leading-snug text-ink">
-        {painting.title}
-      </h2>
-      <div className="mt-1 text-sm text-ink/85">
-        {painting.artist}
-        {painting.year ? ` · ${painting.year}` : ""}
+      {/* The answer — biggest element so it's the thing the player reads. */}
+      <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
+        {modeMeta(mode).label}
       </div>
+      <h2
+        className={
+          "mt-0.5 text-xl font-bold leading-tight " +
+          (correct ? "text-ink" : "text-red-800")
+        }
+      >
+        {target}
+      </h2>
 
-      <dl className="mt-4 space-y-2 text-[12px]">
-        {mode !== "movement" && painting.mv && <Row label="Movement" value={painting.mv} />}
-        {painting.g && <Row label="Genre" value={painting.g} />}
-        {painting.loc && <Row label="Location" value={painting.loc} />}
-      </dl>
+      {/* Painting context, smaller and supporting. */}
+      <div className="mt-4 border-t border-black/[0.06] pt-3 text-[12px] leading-snug">
+        {showTitle && (
+          <div className="font-medium text-ink">{painting.title}</div>
+        )}
+        {(showArtist || showYear) && (
+          <div className="text-ink/80">
+            {showArtist && painting.artist}
+            {showArtist && showYear ? " · " : ""}
+            {showYear && painting.year}
+          </div>
+        )}
+        <dl className="mt-2 space-y-1.5">
+          {showMovement && <Row label="Movement" value={painting.mv!} />}
+          {painting.g && <Row label="Genre" value={painting.g} />}
+          {painting.loc && <Row label="Location" value={painting.loc} />}
+        </dl>
+      </div>
 
       <div className="flex-1" />
       <div className="mt-4 flex items-center justify-between gap-2">
