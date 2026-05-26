@@ -52,8 +52,26 @@ async function sparql(query, attempts = 4) {
 
 const TARGET_PAINTINGS = 12000;
 const PER_ARTIST_MIN = 4;
+// Nordic painters are typically less linked on Wikidata. Floor of 1 keeps
+// single-work painters in so the umbrella set reaches a useful size; variety
+// per painter is still bounded above by PER_ARTIST_MAX.
+const PER_ARTIST_MIN_NORDIC = 1;
 const PER_ARTIST_MAX = 55;
+// Nordic painters get a deeper cap — Munch, Larsson, Hammershøi, Zorn etc.
+// have plenty of works on Wikidata that would otherwise be sliced off.
+const PER_ARTIST_MAX_NORDIC = 120;
 const PAINTER_SEED_LIMIT = 3500;
+
+const NORWAY_QID = "Q20";
+const NORDIC_COUNTRY_QIDS = [
+  NORWAY_QID, // Norway
+  "Q34",      // Sweden
+  "Q35",      // Denmark
+  "Q33",      // Finland
+  "Q189",     // Iceland
+  "Q70802",   // Denmark–Norway
+  "Q170072",  // Union between Sweden and Norway
+];
 
 // Sitelink tiers — each query is small enough to finish under Wikidata's 60s timeout.
 const TIERS = [
@@ -141,8 +159,15 @@ LIMIT ${tier.limit}
   return [...byId.values()];
 }
 
-function selectPaintings(all) {
-  // Group by creator, keep only creators with ≥ PER_ARTIST_MIN paintings.
+function minForCreator(creator, nordicPainters) {
+  return nordicPainters.has(creator) ? PER_ARTIST_MIN_NORDIC : PER_ARTIST_MIN;
+}
+function maxForCreator(creator, nordicPainters) {
+  return nordicPainters.has(creator) ? PER_ARTIST_MAX_NORDIC : PER_ARTIST_MAX;
+}
+
+function selectPaintings(all, nordicPainters) {
+  // Group by creator, keep only creators with enough paintings.
   const byCreator = new Map();
   for (const p of all) {
     const arr = byCreator.get(p.creatorQid) || [];
@@ -151,27 +176,33 @@ function selectPaintings(all) {
   }
   const kept = [];
   let droppedArtists = 0;
-  for (const [, arr] of byCreator) {
-    if (arr.length < PER_ARTIST_MIN) {
+  let nordicArtistsKept = 0;
+  for (const [creator, arr] of byCreator) {
+    const min = minForCreator(creator, nordicPainters);
+    const max = maxForCreator(creator, nordicPainters);
+    if (arr.length < min) {
       droppedArtists++;
       continue;
     }
-    // Sort by fame, take up to PER_ARTIST_MAX
     arr.sort((a, b) => b.sitelinks - a.sitelinks);
-    for (const p of arr.slice(0, PER_ARTIST_MAX)) kept.push(p);
+    for (const p of arr.slice(0, max)) kept.push(p);
+    if (nordicPainters.has(creator)) nordicArtistsKept++;
   }
-  // Sort overall by fame and cap to TARGET_PAINTINGS — but in a way that
-  // preserves the ≥4 invariant: after capping, re-check and re-trim.
+  // Cap to TARGET_PAINTINGS then re-check the floors (some painters might be
+  // pushed below their min after the slice).
   kept.sort((a, b) => b.sitelinks - a.sitelinks);
   let trimmed = kept.slice(0, TARGET_PAINTINGS);
   for (let iter = 0; iter < 3; iter++) {
     const counts = new Map();
     for (const p of trimmed) counts.set(p.creatorQid, (counts.get(p.creatorQid) || 0) + 1);
-    const next = trimmed.filter((p) => counts.get(p.creatorQid) >= PER_ARTIST_MIN);
+    const next = trimmed.filter(
+      (p) => counts.get(p.creatorQid) >= minForCreator(p.creatorQid, nordicPainters),
+    );
     if (next.length === trimmed.length) break;
     trimmed = next;
   }
-  console.log(`  ↳ ${droppedArtists} artists dropped (< ${PER_ARTIST_MIN} paintings)`);
+  console.log(`  ↳ ${droppedArtists} artists dropped`);
+  console.log(`  ↳ ${nordicArtistsKept} Nordic artists kept (≥ ${PER_ARTIST_MIN_NORDIC} paintings)`);
   console.log(`  ↳ ${trimmed.length} paintings kept`);
   return trimmed;
 }
@@ -273,6 +304,36 @@ function categorize({ movements, country, year, genres }) {
   return [...cats];
 }
 
+async function phaseNordicPainters() {
+  const values = NORDIC_COUNTRY_QIDS.map((q) => `wd:${q}`).join(" ");
+  // Citizenship only — fast and well-indexed. Adding a P19→P17 birthplace UNION
+  // here roughly triples the painter count, which then triples Phase A2's work
+  // and hammers Wikidata. Keep it lean.
+  const query = `
+SELECT DISTINCT ?painter ?country WHERE {
+  VALUES ?country { ${values} }
+  ?painter wdt:P31 wd:Q5 ;
+           wdt:P106 wd:Q1028181 ;
+           wdt:P27 ?country .
+}
+LIMIT 8000
+`;
+  console.log("Phase A0b — Nordic painters by country (citizenship)…");
+  const data = await sparql(query);
+  // Per-country sets so categorize can tag deterministically from the
+  // painter QID — no dependence on Phase B's enrichment lookup succeeding.
+  const all = new Set();
+  const norwegian = new Set();
+  for (const b of data.results.bindings) {
+    const painter = b.painter.value;
+    const country = b.country.value.split("/").pop();
+    all.add(painter);
+    if (country === NORWAY_QID) norwegian.add(painter);
+  }
+  console.log(`  ↳ ${all.size} Nordic painters (${norwegian.size} Norwegian)`);
+  return { all, norwegian };
+}
+
 async function phaseTopPainters() {
   // Query the most-linked painters directly so we don't miss artists whose
   // individual works are well-known but never crossed our headline tiers.
@@ -348,15 +409,19 @@ LIMIT 8000
 }
 
 async function main() {
-  const [phaseAList, topPainterIds] = await Promise.all([
+  const [phaseAList, topPainterIds, nordic] = await Promise.all([
     phaseA(),
     phaseTopPainters(),
+    phaseNordicPainters(),
   ]);
+  const nordicPainters = nordic.all;
+  const norwegianPainters = nordic.norwegian;
 
-  // Union of seed painters: those who surfaced in the headline tiers,
-  // plus the top-N painters by sitelinks (regardless of any single work's fame).
+  // Seed painters: headline-tier creators + top-by-sitelinks + every Nordic
+  // painter we found by country. Catalog expansion will pull all their works.
   const seedPainters = new Set(topPainterIds);
   for (const p of phaseAList) seedPainters.add(p.creatorQid);
+  for (const id of nordicPainters) seedPainters.add(id);
   console.log(`Seed painters: ${seedPainters.size}`);
 
   const expanded = await phaseArtistExpansion(seedPainters);
@@ -369,7 +434,7 @@ async function main() {
   }
   console.log(`Merged: ${merged.size} unique paintings before per-artist filter`);
 
-  const selected = selectPaintings([...merged.values()]);
+  const selected = selectPaintings([...merged.values()], nordicPainters);
   const enrich = await phaseB(selected);
 
   const out = selected.map((p) => {
@@ -383,6 +448,14 @@ async function main() {
       year: p.year,
       genres,
     });
+    // Deterministic Nordic tagging: trust the painter QID, not the enrichment
+    // label, so we don't miss paintings whose country lookup quietly failed.
+    if (norwegianPainters.has(p.creatorQid) && !categories.includes("norwegian")) {
+      categories.push("norwegian");
+    }
+    if (nordicPainters.has(p.creatorQid) && !categories.includes("nordic")) {
+      categories.push("nordic");
+    }
     return {
       id: p.id,
       title: p.title,
