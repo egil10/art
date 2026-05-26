@@ -272,6 +272,21 @@ export function Quiz({
             <Images size={15} strokeWidth={2} />
             <span className="hidden sm:inline">Gallery</span>
           </Link>
+          <button
+            onClick={handleReport}
+            disabled={reported}
+            className={
+              "pill focus-ring " +
+              (reported
+                ? "cursor-default bg-black/5 text-ink-muted"
+                : "glass text-ink/80 hover:text-ink")
+            }
+            aria-label="Report this painting"
+            title="Report a wrong or bad image"
+          >
+            <Flag size={14} strokeWidth={2} />
+            <span className="hidden sm:inline">{reported ? "Thanks" : "Report"}</span>
+          </button>
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -304,22 +319,6 @@ export function Quiz({
                   (imgReady ? "opacity-100" : "opacity-0")
                 }
               />
-
-              <button
-                onClick={handleReport}
-                disabled={reported}
-                className={
-                  "absolute right-3 top-3 pill focus-ring " +
-                  (reported
-                    ? "cursor-default bg-black/5 text-ink-muted"
-                    : "glass text-ink/70 hover:text-ink")
-                }
-                aria-label="Report this painting"
-                title="Report a wrong or bad image"
-              >
-                <Flag size={14} strokeWidth={2} />
-                <span className="text-xs">{reported ? "Thanks" : "Report"}</span>
-              </button>
 
               {/* Mobile reveal — overlay at bottom of painting */}
               <div
