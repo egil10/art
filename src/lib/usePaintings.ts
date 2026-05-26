@@ -6,10 +6,16 @@ import type { Painting } from "./paintings";
 let cache: Painting[] | null = null;
 let inflight: Promise<Painting[]> | null = null;
 
+// Bump this when the dataset is regenerated. The query string forces an
+// existing browser cache to refetch even if the file path is otherwise
+// identical, and `cache: 'no-cache'` makes future updates revalidate via
+// conditional GET instead of being pinned in cache.
+const DATA_VERSION = "3";
+
 async function load(): Promise<Painting[]> {
   if (cache) return cache;
   if (inflight) return inflight;
-  inflight = fetch("/paintings.json", { cache: "force-cache" })
+  inflight = fetch(`/paintings.json?v=${DATA_VERSION}`, { cache: "no-cache" })
     .then((r) => {
       if (!r.ok) throw new Error(`Failed to load paintings: ${r.status}`);
       return r.json();
