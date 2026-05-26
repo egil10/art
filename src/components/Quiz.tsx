@@ -20,6 +20,9 @@ import {
   Images,
   ExternalLink,
   Hash,
+  Timer,
+  Hand,
+  Zap,
 } from "lucide-react";
 import {
   buildChoices,
@@ -31,9 +34,24 @@ import {
   type CategoryKey,
   type Painting,
 } from "@/lib/paintings";
-import { reportPainting } from "@/lib/reports";
+import {
+  copyToClipboard,
+  formatReport,
+  getReports,
+  reportPainting,
+} from "@/lib/reports";
+import { ReportsModal } from "./ReportsModal";
 
 type Phase = "idle" | "answered";
+type AutoMode = "off" | "fast" | "slow";
+
+const AUTO_KEY = "canvas.autoAdvance.v1";
+const AUTO_DELAYS: Record<AutoMode, number> = { off: 0, fast: 1000, slow: 3000 };
+const AUTO_LABELS: Record<AutoMode, string> = {
+  off: "Manual",
+  fast: "Auto 1s",
+  slow: "Auto 3s",
+};
 
 type Round = {
   painting: Painting;
@@ -171,6 +189,32 @@ export function Quiz({
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [imgReady, setImgReady] = useState(false);
   const [reported, setReported] = useState(false);
+  const [reportCount, setReportCount] = useState(0);
+  const [showCopied, setShowCopied] = useState(false);
+  const [reportsOpen, setReportsOpen] = useState(false);
+  const [autoMode, setAutoMode] = useState<AutoMode>("slow");
+
+  // Hydrate persisted preferences after mount (SSR-safe).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const v = localStorage.getItem(AUTO_KEY);
+    if (v === "off" || v === "fast" || v === "slow") setAutoMode(v);
+  }, []);
+
+  // Sync queue length on mount + when reports change.
+  useEffect(() => {
+    setReportCount(getReports().length);
+  }, [reportsOpen]);
+
+  const cycleAutoMode = useCallback(() => {
+    setAutoMode((m) => {
+      const next: AutoMode = m === "off" ? "fast" : m === "fast" ? "slow" : "off";
+      if (typeof window !== "undefined") {
+        localStorage.setItem(AUTO_KEY, next);
+      }
+      return next;
+    });
+  }, []);
 
   const poolRef = useRef(pool);
   useEffect(() => {
@@ -221,14 +265,15 @@ export function Quiz({
 
   useEffect(() => {
     if (state.phase !== "answered") return;
+    if (autoMode === "off") return;
     if (advanceTimer.current) clearTimeout(advanceTimer.current);
     advanceTimer.current = setTimeout(() => {
       dispatch({ type: "next", pool: poolRef.current });
-    }, 3000);
+    }, AUTO_DELAYS[autoMode]);
     return () => {
       if (advanceTimer.current) clearTimeout(advanceTimer.current);
     };
-  }, [state.phase]);
+  }, [state.phase, autoMode]);
 
   const current = state.current;
   const accuracy = useMemo(
@@ -237,10 +282,16 @@ export function Quiz({
     [state.score, state.total],
   );
 
-  const handleReport = useCallback(() => {
+  const handleReport = useCallback(async () => {
     if (!current) return;
-    reportPainting(current.painting);
+    const entry = reportPainting(current.painting);
     setReported(true);
+    setReportCount(getReports().length);
+    const ok = await copyToClipboard(formatReport(entry));
+    if (ok) {
+      setShowCopied(true);
+      setTimeout(() => setShowCopied(false), 1800);
+    }
   }, [current]);
 
   const handleNext = useCallback(() => {
@@ -281,11 +332,40 @@ export function Quiz({
                 ? "cursor-default bg-black/5 text-ink-muted"
                 : "glass text-ink/80 hover:text-ink")
             }
-            aria-label="Report this painting"
-            title="Report a wrong or bad image"
+            aria-label="Report this painting — copies it to clipboard"
+            title="Flag this painting and copy its info to your clipboard"
           >
             <Flag size={14} strokeWidth={2} />
-            <span className="hidden sm:inline">{reported ? "Thanks" : "Report"}</span>
+            <span className="hidden sm:inline">
+              {reported ? "Copied" : "Report"}
+            </span>
+          </button>
+          {reportCount > 0 && (
+            <button
+              onClick={() => setReportsOpen(true)}
+              className="pill-glass focus-ring"
+              aria-label={`Open report queue (${reportCount})`}
+              title="Open report queue"
+            >
+              <span className="tabular-nums text-[11px] font-semibold">
+                {reportCount}
+              </span>
+            </button>
+          )}
+          <button
+            onClick={cycleAutoMode}
+            className="pill-glass focus-ring"
+            aria-label={`Auto-advance: ${AUTO_LABELS[autoMode]} — tap to cycle`}
+            title="Cycle auto-advance speed"
+          >
+            {autoMode === "off" ? (
+              <Hand size={14} strokeWidth={2} />
+            ) : autoMode === "fast" ? (
+              <Zap size={14} strokeWidth={2} />
+            ) : (
+              <Timer size={14} strokeWidth={2} />
+            )}
+            <span className="hidden sm:inline">{AUTO_LABELS[autoMode]}</span>
           </button>
         </div>
 
@@ -407,6 +487,23 @@ export function Quiz({
       <p className="mt-4 text-center text-[11px] text-ink-muted">
         Press <Kbd>1</Kbd>–<Kbd>4</Kbd> to answer · <Kbd>Enter</Kbd> for next
       </p>
+
+      {/* Copy-confirmation toast */}
+      <div
+        aria-live="polite"
+        className={
+          "pointer-events-none fixed inset-x-0 top-3 z-40 flex justify-center transition-all duration-300 " +
+          (showCopied
+            ? "translate-y-0 opacity-100"
+            : "-translate-y-2 opacity-0")
+        }
+      >
+        <div className="glass-strong rounded-full px-4 py-2 text-[12px] text-ink shadow-lg">
+          Copied — paste it in our chat to flag the image.
+        </div>
+      </div>
+
+      {reportsOpen && <ReportsModal onClose={() => setReportsOpen(false)} />}
     </div>
   );
 }

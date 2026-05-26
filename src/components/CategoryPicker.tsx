@@ -58,11 +58,11 @@ export function CategoryPicker({
         type="button"
         aria-label="Close"
         onClick={onClose}
-        className="absolute inset-0 bg-black/20 backdrop-blur-sm"
+        className="absolute inset-0 frost-backdrop"
       />
 
       <div className="relative w-full max-w-2xl animate-fade-up">
-        <div className="glass-strong rounded-3xl overflow-hidden">
+        <div className="frost rounded-3xl overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
@@ -97,7 +97,7 @@ export function CategoryPicker({
                           "group flex items-center justify-between rounded-2xl border px-3 py-2.5 text-left transition focus-ring " +
                           (active
                             ? "border-ink/15 bg-ink text-white"
-                            : "border-white/70 bg-white/55 backdrop-blur hover:bg-white/85")
+                            : "border-black/[0.06] bg-white/90 hover:bg-white")
                         }
                       >
                         <div className="min-w-0">
