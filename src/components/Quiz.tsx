@@ -23,15 +23,21 @@ import {
   Timer,
   Hand,
   Zap,
+  Gamepad2,
+  Repeat,
+  RotateCcw,
 } from "lucide-react";
 import {
-  buildChoices,
+  buildChoicesForMode,
   categoryLabel,
   imageUrl,
+  modeMeta,
   paintingsFor,
+  paintingsForMode,
   rng,
   wikipediaUrl,
   type CategoryKey,
+  type GameMode,
   type Painting,
 } from "@/lib/paintings";
 import {
@@ -46,25 +52,51 @@ type Phase = "idle" | "answered";
 type AutoMode = "off" | "fast" | "slow";
 
 const AUTO_KEY = "canvas.autoAdvance.v1";
+const REVIEW_KEY = "canvas.reviewWrong.v1";
 const AUTO_DELAYS: Record<AutoMode, number> = { off: 0, fast: 1000, slow: 3000 };
 const AUTO_LABELS: Record<AutoMode, string> = {
   off: "Manual",
   fast: "Auto 1s",
   slow: "Auto 3s",
 };
+// How often a re-surfaced wrong answer is preferred over a fresh random pick.
+const REVIEW_PROB = 0.35;
+// Cap the wrong-queue so it can't grow unboundedly across a long session.
+const WRONG_QUEUE_MAX = 60;
+
+function recentCap(poolSize: number) {
+  // Recent-history window scales with the pool so small categories (e.g. ~80
+  // paintings in Italian) don't starve, but large ones still spread out.
+  return Math.max(6, Math.min(poolSize - 6, 220));
+}
 
 type Round = {
   painting: Painting;
   choices: string[];
+  target: string;
 };
+
+function buildRound(
+  painting: Painting,
+  pool: Painting[],
+  mode: GameMode,
+  r: () => number,
+): Round {
+  const { choices, target } = buildChoicesForMode(painting, pool, mode, r);
+  return { painting, choices, target };
+}
 
 function pickRound(
   pool: Painting[],
+  mode: GameMode,
   recent: Set<string>,
   r: () => number,
 ): Round {
   let p: Painting | null = null;
-  for (let i = 0; i < 30; i++) {
+  // Scale our search effort with how restrictive `recent` is — for small
+  // pools we need more tries to find an unseen one.
+  const tries = Math.min(80, Math.max(20, recent.size));
+  for (let i = 0; i < tries; i++) {
     const cand = pool[Math.floor(r() * pool.length)];
     if (!recent.has(cand.id)) {
       p = cand;
@@ -72,13 +104,15 @@ function pickRound(
     }
   }
   if (!p) p = pool[Math.floor(r() * pool.length)];
-  return { painting: p, choices: buildChoices(p, pool, r) };
+  return buildRound(p, pool, mode, r);
 }
 
 type State = {
   queue: Round[];
   current: Round | null;
   recent: Set<string>;
+  /** IDs of paintings answered incorrectly, oldest first. */
+  wrong: string[];
   picked: string | null;
   phase: Phase;
   score: number;
@@ -88,12 +122,13 @@ type State = {
   seed: number;
 };
 
-function makeInitial(pool: Painting[], seed: number): State {
+function makeInitial(pool: Painting[], mode: GameMode, seed: number): State {
   if (pool.length === 0) {
     return {
       queue: [],
       current: null,
       recent: new Set(),
+      wrong: [],
       picked: null,
       phase: "idle",
       score: 0,
@@ -104,11 +139,12 @@ function makeInitial(pool: Painting[], seed: number): State {
     };
   }
   const r = rng(seed);
-  const queue = Array.from({ length: 4 }, () => pickRound(pool, new Set(), r));
+  const queue = Array.from({ length: 4 }, () => pickRound(pool, mode, new Set(), r));
   return {
     queue: queue.slice(1),
     current: queue[0],
     recent: new Set([queue[0].painting.id]),
+    wrong: [],
     picked: null,
     phase: "idle",
     score: 0,
@@ -121,15 +157,25 @@ function makeInitial(pool: Painting[], seed: number): State {
 
 type Action =
   | { type: "answer"; choice: string }
-  | { type: "next"; pool: Painting[] }
-  | { type: "reset"; pool: Painting[]; seed: number };
+  | { type: "next"; pool: Painting[]; mode: GameMode; review: boolean }
+  | { type: "reset"; pool: Painting[]; mode: GameMode; seed: number };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "answer": {
       if (state.phase === "answered" || !state.current) return state;
-      const correct = action.choice === state.current.painting.artist;
+      const correct = action.choice === state.current.target;
       const streak = correct ? state.streak + 1 : 0;
+      const currentId = state.current.painting.id;
+      let wrong = state.wrong;
+      if (correct) {
+        // Got it right — drop from the review queue if it's there.
+        if (wrong.includes(currentId)) wrong = wrong.filter((id) => id !== currentId);
+      } else {
+        // Push to the back of the queue (keep the original entry if present).
+        wrong = wrong.includes(currentId) ? wrong : [...wrong, currentId];
+        if (wrong.length > WRONG_QUEUE_MAX) wrong = wrong.slice(wrong.length - WRONG_QUEUE_MAX);
+      }
       return {
         ...state,
         picked: action.choice,
@@ -138,53 +184,81 @@ function reducer(state: State, action: Action): State {
         streak,
         best: Math.max(state.best, streak),
         total: state.total + 1,
+        wrong,
       };
     }
     case "next": {
-      const pool = action.pool;
+      const { pool, mode, review } = action;
       if (pool.length === 0) return state;
       const r = rng((state.seed + state.total * 7919) | 0);
+
+      // Decide whether to inject a previously-wrong painting.
+      let nextRound: Round | null = null;
+      let wrong = state.wrong;
+      if (review && wrong.length > 0 && r() < REVIEW_PROB) {
+        // Pick the oldest wrong painting we still have in pool and isn't in recent.
+        for (let i = 0; i < wrong.length; i++) {
+          const id = wrong[i];
+          if (state.recent.has(id)) continue;
+          const found = pool.find((p) => p.id === id);
+          if (!found) continue;
+          nextRound = buildRound(found, pool, mode, r);
+          wrong = [...wrong.slice(0, i), ...wrong.slice(i + 1)];
+          break;
+        }
+      }
+
       const queue = state.queue.slice();
-      while (queue.length < 3) queue.push(pickRound(pool, state.recent, r));
-      const nextRound = queue.shift()!;
-      queue.push(pickRound(pool, state.recent, r));
+      if (!nextRound) {
+        while (queue.length < 1) queue.push(pickRound(pool, mode, state.recent, r));
+        nextRound = queue.shift()!;
+      }
+      // Top up the look-ahead queue with fresh picks.
+      while (queue.length < 3) queue.push(pickRound(pool, mode, state.recent, r));
+
       const recent = new Set(state.recent);
       recent.add(nextRound.painting.id);
-      if (recent.size > 120) {
+      const cap = recentCap(pool.length);
+      if (recent.size > cap) {
         const arr = [...recent];
-        for (let i = 0; i < arr.length - 120; i++) recent.delete(arr[i]);
+        for (let i = 0; i < arr.length - cap; i++) recent.delete(arr[i]);
       }
       return {
         ...state,
         current: nextRound,
         queue,
         recent,
+        wrong,
         picked: null,
         phase: "idle",
       };
     }
     case "reset":
-      return makeInitial(action.pool, action.seed);
+      return makeInitial(action.pool, action.mode, action.seed);
   }
 }
 
 export function Quiz({
   paintings,
   category,
+  mode,
   onChangeCategory,
+  onChangeMode,
 }: {
   paintings: Painting[];
   category: CategoryKey;
+  mode: GameMode;
   onChangeCategory: () => void;
+  onChangeMode: () => void;
 }) {
   const pool = useMemo(
-    () => paintingsFor(paintings, category),
-    [paintings, category],
+    () => paintingsForMode(paintingsFor(paintings, category), mode),
+    [paintings, category, mode],
   );
   const [state, dispatch] = useReducer(
     reducer,
     null,
-    () => makeInitial(pool, Date.now() & 0x7fffffff),
+    () => makeInitial(pool, mode, Date.now() & 0x7fffffff),
   );
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [imgReady, setImgReady] = useState(false);
@@ -193,13 +267,30 @@ export function Quiz({
   const [showCopied, setShowCopied] = useState(false);
   const [reportsOpen, setReportsOpen] = useState(false);
   const [autoMode, setAutoMode] = useState<AutoMode>("slow");
+  const [review, setReview] = useState(false);
 
   // Hydrate persisted preferences after mount (SSR-safe).
   useEffect(() => {
     if (typeof window === "undefined") return;
     const v = localStorage.getItem(AUTO_KEY);
     if (v === "off" || v === "fast" || v === "slow") setAutoMode(v);
+    setReview(localStorage.getItem(REVIEW_KEY) === "1");
   }, []);
+
+  const reviewRef = useRef(review);
+  useEffect(() => {
+    reviewRef.current = review;
+  }, [review]);
+
+  function toggleReview() {
+    setReview((on) => {
+      const next = !on;
+      if (typeof window !== "undefined") {
+        localStorage.setItem(REVIEW_KEY, next ? "1" : "0");
+      }
+      return next;
+    });
+  }
 
   // Sync queue length on mount + when reports change.
   useEffect(() => {
@@ -222,14 +313,21 @@ export function Quiz({
   }, [pool]);
 
   const categoryRef = useRef(category);
+  const modeRef = useRef(mode);
   useEffect(() => {
-    if (categoryRef.current !== category) {
+    if (categoryRef.current !== category || modeRef.current !== mode) {
       categoryRef.current = category;
-      dispatch({ type: "reset", pool, seed: Date.now() & 0x7fffffff });
+      modeRef.current = mode;
+      dispatch({
+        type: "reset",
+        pool,
+        mode,
+        seed: Date.now() & 0x7fffffff,
+      });
       setImgReady(false);
       setReported(false);
     }
-  }, [category, pool]);
+  }, [category, mode, pool]);
 
   useEffect(() => {
     for (const r of state.queue.slice(0, 3)) {
@@ -256,7 +354,7 @@ export function Quiz({
         }
       } else if (e.key === "Enter" || e.key === " " || e.key === "ArrowRight") {
         e.preventDefault();
-        dispatch({ type: "next", pool: poolRef.current });
+        dispatch({ type: "next", pool: poolRef.current, mode: modeRef.current, review: reviewRef.current });
       }
     }
     window.addEventListener("keydown", onKey);
@@ -268,7 +366,7 @@ export function Quiz({
     if (autoMode === "off") return;
     if (advanceTimer.current) clearTimeout(advanceTimer.current);
     advanceTimer.current = setTimeout(() => {
-      dispatch({ type: "next", pool: poolRef.current });
+      dispatch({ type: "next", pool: poolRef.current, mode: modeRef.current, review: reviewRef.current });
     }, AUTO_DELAYS[autoMode]);
     return () => {
       if (advanceTimer.current) clearTimeout(advanceTimer.current);
@@ -295,12 +393,12 @@ export function Quiz({
   }, [current]);
 
   const handleNext = useCallback(() => {
-    dispatch({ type: "next", pool: poolRef.current });
+    dispatch({ type: "next", pool: poolRef.current, mode: modeRef.current, review: reviewRef.current });
   }, []);
 
   if (!current) return null;
   const answered = state.phase === "answered";
-  const correct = state.picked === current.painting.artist;
+  const correct = state.picked === current.target;
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 pb-12 pt-3 sm:pt-6">
@@ -314,6 +412,15 @@ export function Quiz({
           >
             <Layers size={15} strokeWidth={2} />
             <span>{categoryLabel(category)}</span>
+          </button>
+          <button
+            onClick={onChangeMode}
+            className="pill-glass focus-ring"
+            aria-label="Change game mode"
+            title="Change what you're guessing"
+          >
+            <Gamepad2 size={15} strokeWidth={2} />
+            <span>{modeMeta(mode).label}</span>
           </button>
           <Link
             href="/gallery"
@@ -367,6 +474,27 @@ export function Quiz({
             )}
             <span className="hidden sm:inline">{AUTO_LABELS[autoMode]}</span>
           </button>
+          <button
+            onClick={toggleReview}
+            className={
+              "pill focus-ring border " +
+              (review
+                ? "border-ink/15 bg-ink text-white"
+                : "border-white/70 bg-white/55 text-ink/80 backdrop-blur hover:bg-white/80")
+            }
+            aria-pressed={review}
+            aria-label={`Review wrong answers: ${review ? "on" : "off"}`}
+            title="Recycle paintings you got wrong"
+          >
+            {review ? (
+              <Repeat size={14} strokeWidth={2.2} />
+            ) : (
+              <RotateCcw size={14} strokeWidth={2} />
+            )}
+            <span className="hidden sm:inline">
+              Review{state.wrong.length > 0 ? ` (${state.wrong.length})` : ""}
+            </span>
+          </button>
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -413,6 +541,8 @@ export function Quiz({
                 <div className="glass-strong pointer-events-auto rounded-2xl px-3 py-2.5">
                   <CompactReveal
                     painting={current.painting}
+                    target={current.target}
+                    mode={mode}
                     correct={correct}
                     onNext={handleNext}
                   />
@@ -428,12 +558,15 @@ export function Quiz({
             {answered ? (
               <SideReveal
                 painting={current.painting}
+                target={current.target}
+                mode={mode}
                 correct={correct}
                 onNext={handleNext}
               />
             ) : (
               <IdleSidePanel
                 category={category}
+                mode={mode}
                 total={state.total}
                 best={state.best}
               />
@@ -510,13 +643,18 @@ export function Quiz({
 
 function CompactReveal({
   painting,
+  target,
+  mode,
   correct,
   onNext,
 }: {
   painting: Painting;
+  target: string;
+  mode: GameMode;
   correct: boolean;
   onNext: () => void;
 }) {
+  const fallbackLine = [painting.year, painting.mv, painting.loc].filter(Boolean).join(" · ");
   return (
     <div className="flex items-center gap-3">
       <div className="min-w-0 flex-1">
@@ -526,15 +664,13 @@ function CompactReveal({
             (correct ? "text-green-700" : "text-red-700")
           }
         >
-          {correct ? "Correct" : painting.artist}
+          {correct ? "Correct" : `Answer: ${target}`}
         </div>
         <div className="truncate text-[13px] font-semibold text-ink">
           {painting.title}
         </div>
         <div className="truncate text-[11px] text-ink-muted">
-          {[painting.year, painting.mv, painting.loc]
-            .filter(Boolean)
-            .join(" · ")}
+          {mode === "painter" ? fallbackLine : `${painting.artist}${painting.year ? " · " + painting.year : ""}`}
         </div>
       </div>
       <button
@@ -551,10 +687,14 @@ function CompactReveal({
 
 function SideReveal({
   painting,
+  target,
+  mode,
   correct,
   onNext,
 }: {
   painting: Painting;
+  target: string;
+  mode: GameMode;
   correct: boolean;
   onNext: () => void;
 }) {
@@ -572,6 +712,13 @@ function SideReveal({
         {correct ? "Correct" : "Not quite"}
       </div>
 
+      {!correct && (
+        <div className="mt-3 inline-flex w-fit items-center gap-1 rounded-full bg-black/[0.04] px-2.5 py-1 text-[11px] text-ink">
+          <span className="text-ink-muted">{modeMeta(mode).label}</span>
+          <span className="font-semibold">{target}</span>
+        </div>
+      )}
+
       <h2 className="mt-3 text-lg font-semibold leading-snug text-ink">
         {painting.title}
       </h2>
@@ -581,7 +728,7 @@ function SideReveal({
       </div>
 
       <dl className="mt-4 space-y-2 text-[12px]">
-        {painting.mv && <Row label="Movement" value={painting.mv} />}
+        {mode !== "movement" && painting.mv && <Row label="Movement" value={painting.mv} />}
         {painting.g && <Row label="Genre" value={painting.g} />}
         {painting.loc && <Row label="Location" value={painting.loc} />}
       </dl>
@@ -608,10 +755,12 @@ function SideReveal({
 
 function IdleSidePanel({
   category,
+  mode,
   total,
   best,
 }: {
   category: CategoryKey;
+  mode: GameMode;
   total: number;
   best: number;
 }) {
@@ -622,10 +771,10 @@ function IdleSidePanel({
         Round {total + 1}
       </div>
       <div className="mt-3 text-base font-semibold text-ink">
-        Who painted this?
+        {modeMeta(mode).question}
       </div>
       <p className="mt-1 text-[12px] text-ink-muted">
-        Pick the painter from the four below — or press
+        Pick the answer from the four below — or press
         <span className="mx-1">
           <Kbd>1</Kbd>
         </span>
@@ -639,6 +788,7 @@ function IdleSidePanel({
       <div className="flex-1" />
 
       <div className="space-y-2 text-[12px] text-ink-muted">
+        <Row label="Mode" value={modeMeta(mode).label} />
         <Row label="Collection" value={categoryLabel(category)} />
         <Row label="Best streak" value={String(best)} />
       </div>

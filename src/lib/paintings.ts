@@ -91,30 +91,114 @@ export function paintingsFor(all: Painting[], category: CategoryKey): Painting[]
   return all.filter((p) => p.cats.includes(category));
 }
 
-export function buildChoices(
+export type GameMode = "painter" | "title" | "movement" | "country" | "decade";
+
+export const GAME_MODES: {
+  key: GameMode;
+  label: string;
+  question: string;
+  hint: string;
+}[] = [
+  { key: "painter", label: "Painter", question: "Who painted this?", hint: "Guess the artist" },
+  { key: "title", label: "Title", question: "What's it called?", hint: "Guess the painting's name" },
+  { key: "movement", label: "Movement", question: "What movement is this?", hint: "Style or school" },
+  { key: "country", label: "Country", question: "Where is it from?", hint: "Country of the artist" },
+  { key: "decade", label: "Decade", question: "When was it painted?", hint: "Pick the decade" },
+];
+
+const MODE_BY_KEY: Record<GameMode, (typeof GAME_MODES)[number]> = Object.fromEntries(
+  GAME_MODES.map((m) => [m.key, m]),
+) as Record<GameMode, (typeof GAME_MODES)[number]>;
+export function modeMeta(m: GameMode) {
+  return MODE_BY_KEY[m];
+}
+
+// Category-derived country labels — Wikidata's artist nationality, mapped to
+// a quiz-friendly country name. Keys are the CategoryKey origin buckets.
+const COUNTRY_FROM_CAT: Record<string, string> = {
+  french: "France",
+  italian: "Italy",
+  dutch: "Netherlands",
+  spanish: "Spain",
+  german: "Germany",
+  british: "United Kingdom",
+  american: "United States",
+  russian: "Russia",
+};
+
+function paintingCountry(p: Painting): string | null {
+  for (const c of p.cats) if (COUNTRY_FROM_CAT[c]) return COUNTRY_FROM_CAT[c];
+  return null;
+}
+
+function paintingDecade(p: Painting): string | null {
+  if (!p.year) return null;
+  const y = parseInt(p.year, 10);
+  if (Number.isNaN(y) || y < 1000 || y > 2030) return null;
+  const decade = Math.floor(y / 10) * 10;
+  return `${decade}s`;
+}
+
+/** Returns the answer string for a painting under a given mode, or null
+    if the painting lacks the data required for that mode. */
+export function modeTarget(p: Painting, mode: GameMode): string | null {
+  switch (mode) {
+    case "painter": return p.artist || null;
+    case "title": return p.title || null;
+    case "movement": return p.mv || null;
+    case "country": return paintingCountry(p);
+    case "decade": return paintingDecade(p);
+  }
+}
+
+/** Restricts the pool to paintings that have a valid target for the mode. */
+export function paintingsForMode(pool: Painting[], mode: GameMode): Painting[] {
+  if (mode === "painter" || mode === "title") return pool; // every painting has these
+  return pool.filter((p) => modeTarget(p, mode) !== null);
+}
+
+/** Builds 4 mutually-distinct choices (correct target + 3 distractors). */
+export function buildChoicesForMode(
   correct: Painting,
   pool: Painting[],
+  mode: GameMode,
   rng: () => number = Math.random,
-): string[] {
-  const seen = new Set<string>();
+): { choices: string[]; target: string } {
+  const target = modeTarget(correct, mode);
+  if (!target) {
+    // Defensive fallback — caller should have filtered.
+    return { choices: [correct.artist, "?", "?", "?"], target: correct.artist };
+  }
+  const seen = new Set<string>([target]);
   const candidates: string[] = [];
   for (const p of pool) {
-    if (p.artist !== correct.artist && !seen.has(p.artist)) {
-      seen.add(p.artist);
-      candidates.push(p.artist);
-    }
+    const t = modeTarget(p, mode);
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    candidates.push(t);
   }
   for (let i = candidates.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
   }
   const distractors = candidates.slice(0, 3);
-  const choices = [correct.artist, ...distractors];
+  // Pad with placeholders if the pool is tiny (shouldn't really happen).
+  while (distractors.length < 3) distractors.push("—");
+  const choices = [target, ...distractors];
   for (let i = choices.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [choices[i], choices[j]] = [choices[j], choices[i]];
   }
-  return choices;
+  return { choices, target };
+}
+
+/** Back-compat for painter-mode callers. */
+export function buildChoices(
+  correct: Painting,
+  pool: Painting[],
+  rng: () => number = Math.random,
+): string[] {
+  return buildChoicesForMode(correct, pool, "painter", rng).choices;
 }
 
 export function rng(seed: number) {

@@ -80,71 +80,77 @@ export default function GalleryPage() {
     <main className="min-h-dvh">
       {/* Sticky top toolbar */}
       <header className="sticky top-0 z-30">
-        <div className="mx-auto max-w-6xl px-4 pt-3">
-          <div className="glass-strong flex flex-col gap-2 rounded-2xl px-2 py-2 sm:flex-row sm:items-center">
-            <div className="flex items-center gap-1.5 pl-1">
-              <Link
-                href="/"
-                className="pill-glass focus-ring"
-                aria-label="Back to quiz"
-              >
-                <ArrowLeft size={15} strokeWidth={2} />
-                <span className="hidden sm:inline">Quiz</span>
-              </Link>
-              <span className="hidden text-xs text-ink-muted sm:inline">Gallery</span>
-            </div>
-
-            <div className="flex flex-1 items-center gap-1.5">
-              <label className="relative flex-1">
-                <Search
-                  size={15}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted"
-                />
-                <input
-                  type="search"
-                  inputMode="search"
-                  autoComplete="off"
-                  placeholder="Search painters, paintings, museums…"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  className="w-full rounded-full border border-white/70 bg-white/60 py-2 pl-9 pr-9 text-sm text-ink placeholder:text-ink-muted backdrop-blur focus:outline-none focus:ring-2 focus:ring-black/15"
-                />
-                {query && (
-                  <button
-                    onClick={() => setQuery("")}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 grid h-6 w-6 place-items-center rounded-full text-ink-muted hover:bg-black/[0.06]"
-                    aria-label="Clear search"
-                  >
-                    <XIcon size={13} />
-                  </button>
-                )}
-              </label>
-            </div>
-          </div>
-
-          {/* Category strip */}
-          <div className="mt-2 -mx-1 flex items-center gap-1.5 overflow-x-auto pb-2 px-1 no-scrollbar">
-            <span className="pill-glass shrink-0 text-ink-muted">
-              <Filter size={13} />
-              <span className="text-[11px]">Filter</span>
-            </span>
-            {CATEGORIES.map((c) => {
-              const active = c.key === category;
-              return (
-                <button
-                  key={c.key}
-                  onClick={() => setCategory(c.key)}
-                  className={
-                    "pill shrink-0 focus-ring border transition " +
-                    (active
-                      ? "bg-ink text-white border-ink"
-                      : "bg-white/55 text-ink/85 border-white/70 backdrop-blur hover:bg-white/80")
-                  }
+        {/* Edge-to-edge frosted band so scrolled content reads as a soft blur
+            instead of poking through between pills. */}
+        <div className="frost border-b border-black/[0.06]">
+          <div className="mx-auto max-w-6xl px-4 py-2.5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-1.5">
+                <Link
+                  href="/"
+                  className="pill-glass focus-ring"
+                  aria-label="Back to quiz"
                 >
-                  {c.label}
-                </button>
-              );
-            })}
+                  <ArrowLeft size={15} strokeWidth={2} />
+                  <span className="hidden sm:inline">Quiz</span>
+                </Link>
+                <span className="hidden text-xs text-ink-muted sm:inline">
+                  Gallery
+                </span>
+              </div>
+
+              <div className="flex flex-1 items-center gap-1.5">
+                <label className="relative flex-1">
+                  <Search
+                    size={15}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted"
+                  />
+                  <input
+                    type="search"
+                    inputMode="search"
+                    autoComplete="off"
+                    placeholder="Search painters, paintings, museums…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    className="w-full rounded-full border border-black/[0.08] bg-white/90 py-2 pl-9 pr-9 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-black/15"
+                  />
+                  {query && (
+                    <button
+                      onClick={() => setQuery("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 grid h-6 w-6 place-items-center rounded-full text-ink-muted hover:bg-black/[0.06]"
+                      aria-label="Clear search"
+                    >
+                      <XIcon size={13} />
+                    </button>
+                  )}
+                </label>
+              </div>
+            </div>
+
+            {/* Category strip */}
+            <div className="mt-2 -mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-1 no-scrollbar">
+              <span className="pill shrink-0 bg-black/[0.04] text-ink-muted">
+                <Filter size={13} />
+                <span className="text-[11px]">Filter</span>
+              </span>
+              {CATEGORIES.map((c) => {
+                const active = c.key === category;
+                return (
+                  <button
+                    key={c.key}
+                    onClick={() => setCategory(c.key)}
+                    className={
+                      "pill shrink-0 focus-ring border transition " +
+                      (active
+                        ? "border-ink bg-ink text-white"
+                        : "border-black/[0.06] bg-white/90 text-ink/85 hover:bg-white")
+                    }
+                  >
+                    {c.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </header>
