@@ -462,9 +462,7 @@ export function Quiz({
             ) : (
               <RotateCcw size={14} strokeWidth={2} />
             )}
-            <span className="hidden sm:inline">
-              Review{state.wrong.length > 0 ? ` (${state.wrong.length})` : ""}
-            </span>
+            <span className="hidden sm:inline">Review</span>
           </button>
         </div>
 
