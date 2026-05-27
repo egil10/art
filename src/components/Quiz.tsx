@@ -667,16 +667,7 @@ export function Quiz({
       <div className="flex flex-col items-stretch gap-3 md:flex-row">
         {/* Painting card */}
         <div className="relative min-w-0 flex-1 animate-pop">
-          <div
-            className={
-              "glass-strong relative overflow-hidden rounded-[28px] transition-shadow duration-300 " +
-              (answered
-                ? correct
-                  ? "ring-[3px] ring-green-400/70"
-                  : "ring-[3px] ring-red-400/70"
-                : "ring-0")
-            }
-          >
+          <div className="glass-strong relative overflow-hidden rounded-[28px]">
             <div className="relative aspect-[4/5] w-full bg-canvas-warm sm:aspect-[5/4]">
               {!imgReady && (
                 <div className="absolute inset-0 grid place-items-center text-ink-muted">
@@ -722,7 +713,16 @@ export function Quiz({
 
         {/* Desktop side panel */}
         <aside className="hidden md:flex md:w-[300px] md:shrink-0">
-          <div className="glass-strong flex w-full flex-col rounded-[28px] p-5">
+          <div
+            className={
+              "glass-strong flex w-full flex-col rounded-[28px] p-5 transition-shadow duration-300 " +
+              (answered
+                ? correct
+                  ? "ring-[3px] ring-green-400/70"
+                  : "ring-[3px] ring-red-400/70"
+                : "ring-0")
+            }
+          >
             {answered ? (
               <SideReveal
                 painting={current.painting}
