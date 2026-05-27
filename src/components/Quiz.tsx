@@ -32,6 +32,7 @@ import {
   categoryLabel,
   imageUrl,
   modeMeta,
+  paintingNationality,
   paintingsFor,
   paintingsForMode,
   rng,
@@ -874,6 +875,8 @@ function SideReveal({
   const showArtist = mode !== "painter";
   const showYear = mode !== "decade" && painting.year;
   const showMovement = mode !== "movement" && painting.mv;
+  const nationality = paintingNationality(painting);
+  const showNationality = nationality && mode !== "country";
 
   return (
     <div className="flex h-full animate-fade-up flex-col">
@@ -915,6 +918,7 @@ function SideReveal({
           </div>
         )}
         <dl className="mt-2 space-y-1.5">
+          {showNationality && <Row label="Nationality" value={nationality!} />}
           {showMovement && <Row label="Movement" value={painting.mv!} />}
           {painting.g && <Row label="Genre" value={painting.g} />}
           {painting.loc && <Row label="Location" value={painting.loc} />}

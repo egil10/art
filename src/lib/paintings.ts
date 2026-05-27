@@ -136,6 +136,23 @@ function paintingCountry(p: Painting): string | null {
   return null;
 }
 
+const NATIONALITY_FROM_CAT: Record<string, string> = {
+  french: "French",
+  italian: "Italian",
+  dutch: "Dutch",
+  spanish: "Spanish",
+  german: "German",
+  british: "British",
+  american: "American",
+  russian: "Russian",
+  norwegian: "Norwegian",
+};
+
+export function paintingNationality(p: Painting): string | null {
+  for (const c of p.cats) if (NATIONALITY_FROM_CAT[c]) return NATIONALITY_FROM_CAT[c];
+  return null;
+}
+
 function paintingDecade(p: Painting): string | null {
   if (!p.year) return null;
   const y = parseInt(p.year, 10);
