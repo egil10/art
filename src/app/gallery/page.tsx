@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -10,6 +10,8 @@ import {
   Filter,
   ExternalLink,
   Flag,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
   CATEGORIES,
@@ -80,10 +82,9 @@ export default function GalleryPage() {
     <main className="min-h-dvh">
       {/* Sticky top toolbar */}
       <header className="sticky top-0 z-30">
-        {/* Edge-to-edge frosted band so scrolled content reads as a soft blur
-            instead of poking through between pills. */}
-        <div className="frost border-b border-black/[0.06]">
-          <div className="mx-auto max-w-6xl px-4 py-2.5">
+        {/* No solid band — each control is its own frosted pill floating over
+            the gallery as it scrolls underneath. */}
+        <div className="mx-auto max-w-6xl px-4 py-2.5">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div className="flex items-center gap-1.5">
                 <Link
@@ -112,7 +113,7 @@ export default function GalleryPage() {
                     placeholder="Search painters, paintings, museums…"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    className="w-full rounded-full border border-black/[0.08] bg-white/90 py-2 pl-9 pr-9 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-black/15"
+                    className="w-full rounded-full border border-white/70 bg-white/60 py-2 pl-9 pr-9 text-sm text-ink shadow-sm backdrop-blur-md placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-black/15"
                   />
                   {query && (
                     <button
@@ -128,30 +129,7 @@ export default function GalleryPage() {
             </div>
 
             {/* Category strip */}
-            <div className="mt-2 -mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-1 no-scrollbar">
-              <span className="pill shrink-0 bg-black/[0.04] text-ink-muted">
-                <Filter size={13} />
-                <span className="text-[11px]">Filter</span>
-              </span>
-              {CATEGORIES.map((c) => {
-                const active = c.key === category;
-                return (
-                  <button
-                    key={c.key}
-                    onClick={() => setCategory(c.key)}
-                    className={
-                      "pill shrink-0 focus-ring border transition " +
-                      (active
-                        ? "border-ink bg-ink text-white"
-                        : "border-black/[0.06] bg-white/90 text-ink/85 hover:bg-white")
-                    }
-                  >
-                    {c.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+            <FilterStrip category={category} onSelect={setCategory} />
         </div>
       </header>
 
@@ -230,6 +208,137 @@ export default function GalleryPage() {
 
       <div className="h-10" />
     </main>
+  );
+}
+
+function FilterStrip({
+  category,
+  onSelect,
+}: {
+  category: CategoryKey;
+  onSelect: (key: CategoryKey) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [canLeft, setCanLeft] = useState(false);
+  const [canRight, setCanRight] = useState(false);
+  // Tracks an in-progress mouse drag so the click that ends it doesn't also
+  // trigger a category change.
+  const drag = useRef({ active: false, startX: 0, startScroll: 0, moved: false });
+
+  const updateArrows = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanLeft(el.scrollLeft > 2);
+    setCanRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+  }, []);
+
+  useEffect(() => {
+    updateArrows();
+    const el = scrollRef.current;
+    if (!el) return;
+    el.addEventListener("scroll", updateArrows, { passive: true });
+    window.addEventListener("resize", updateArrows);
+    return () => {
+      el.removeEventListener("scroll", updateArrows);
+      window.removeEventListener("resize", updateArrows);
+    };
+  }, [updateArrows]);
+
+  function nudge(dir: 1 | -1) {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir * el.clientWidth * 0.7, behavior: "smooth" });
+  }
+
+  // Mouse-only drag-to-scroll — touch keeps its native momentum scrolling.
+  function onPointerDown(e: React.PointerEvent) {
+    if (e.pointerType !== "mouse") return;
+    const el = scrollRef.current;
+    if (!el) return;
+    drag.current = {
+      active: true,
+      startX: e.clientX,
+      startScroll: el.scrollLeft,
+      moved: false,
+    };
+    el.setPointerCapture(e.pointerId);
+  }
+  function onPointerMove(e: React.PointerEvent) {
+    const el = scrollRef.current;
+    if (!el || !drag.current.active) return;
+    const dx = e.clientX - drag.current.startX;
+    if (Math.abs(dx) > 4) drag.current.moved = true;
+    el.scrollLeft = drag.current.startScroll - dx;
+  }
+  function onPointerUp(e: React.PointerEvent) {
+    if (!drag.current.active) return;
+    drag.current.active = false;
+    scrollRef.current?.releasePointerCapture(e.pointerId);
+  }
+
+  return (
+    <div className="relative mt-2">
+      <button
+        type="button"
+        onClick={() => nudge(-1)}
+        tabIndex={-1}
+        aria-hidden={!canLeft}
+        aria-label="Scroll filters left"
+        className={
+          "absolute left-0 top-1/2 z-10 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full border border-white/70 bg-white/70 text-ink/70 shadow-sm backdrop-blur transition hover:bg-white/90 hover:text-ink focus-ring " +
+          (canLeft ? "opacity-100" : "pointer-events-none opacity-0")
+        }
+      >
+        <ChevronLeft size={16} />
+      </button>
+      <button
+        type="button"
+        onClick={() => nudge(1)}
+        tabIndex={-1}
+        aria-hidden={!canRight}
+        aria-label="Scroll filters right"
+        className={
+          "absolute right-0 top-1/2 z-10 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full border border-white/70 bg-white/70 text-ink/70 shadow-sm backdrop-blur transition hover:bg-white/90 hover:text-ink focus-ring " +
+          (canRight ? "opacity-100" : "pointer-events-none opacity-0")
+        }
+      >
+        <ChevronRight size={16} />
+      </button>
+
+      <div
+        ref={scrollRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        className="flex items-center gap-1.5 overflow-x-auto px-1 pb-1 no-scrollbar cursor-grab select-none active:cursor-grabbing"
+      >
+        <span className="pill shrink-0 border border-white/60 bg-white/45 text-ink-muted backdrop-blur">
+          <Filter size={13} />
+          <span className="text-[11px]">Filter</span>
+        </span>
+        {CATEGORIES.map((c) => {
+          const active = c.key === category;
+          return (
+            <button
+              key={c.key}
+              onClick={() => {
+                if (drag.current.moved) return;
+                onSelect(c.key);
+              }}
+              className={
+                "pill shrink-0 focus-ring border transition " +
+                (active
+                  ? "border-ink bg-ink text-white shadow-sm"
+                  : "border-white/70 bg-white/55 text-ink/85 backdrop-blur hover:bg-white/80")
+              }
+            >
+              {c.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
