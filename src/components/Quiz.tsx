@@ -1008,17 +1008,6 @@ function IdleSidePanel({
       <div className="mt-3 text-base font-semibold text-ink">
         {modeMeta(mode).question}
       </div>
-      <p className="mt-1 text-[12px] text-ink-muted">
-        Pick the answer from the four below — or press
-        <span className="mx-1">
-          <Kbd>1</Kbd>
-        </span>
-        through
-        <span className="mx-1">
-          <Kbd>4</Kbd>
-        </span>
-        on your keyboard.
-      </p>
 
       <div className="flex-1" />
 
