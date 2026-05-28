@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Painting } from "./paintings";
+import { formatMovement, type Painting } from "./paintings";
 
 let cache: Painting[] | null = null;
 let inflight: Promise<Painting[]> | null = null;
@@ -21,6 +21,7 @@ async function load(): Promise<Painting[]> {
       return r.json();
     })
     .then((data: Painting[]) => {
+      for (const p of data) p.mv = formatMovement(p.mv);
       cache = data;
       return data;
     });

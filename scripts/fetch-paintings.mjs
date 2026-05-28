@@ -21,6 +21,13 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Sentence-case a movement label so "naïve art" / "Naïve art" collapse to one
+// consistent value. Mirrors formatMovement() in src/lib/paintings.ts.
+function formatMovement(mv) {
+  if (!mv) return null;
+  return mv.charAt(0).toUpperCase() + mv.slice(1);
+}
+
 async function sparql(query, attempts = 4) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
@@ -463,7 +470,7 @@ async function main() {
       year: p.year,
       image: p.image,
       cats: categories,
-      mv: movements[0] || null,
+      mv: formatMovement(movements[0]),
       loc: locations[0] || null,
       g: genres[0] || null,
     };

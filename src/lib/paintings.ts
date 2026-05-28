@@ -153,6 +153,15 @@ export function paintingNationality(p: Painting): string | null {
   return null;
 }
 
+/** Standardise a movement label to sentence case — uppercase the first
+    letter, leave the rest untouched (so "Pre-Raphaelite", "De Stijl" and
+    other intentional internal capitals survive). Collapses case-only
+    variants like "realism"/"Realism" into one consistent answer. */
+export function formatMovement(mv: string | null | undefined): string | null {
+  if (!mv) return null;
+  return mv.charAt(0).toUpperCase() + mv.slice(1);
+}
+
 function paintingDecade(p: Painting): string | null {
   if (!p.year) return null;
   const y = parseInt(p.year, 10);
