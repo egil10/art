@@ -244,6 +244,22 @@ function FilterStrip({
     };
   }, [updateArrows]);
 
+  // Translate a plain vertical mouse wheel into horizontal scrolling so the
+  // strip is browsable without a trackpad's sideways swipe. Attached natively
+  // (non-passive) because React's onWheel is passive and can't preventDefault.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    function onWheel(e: WheelEvent) {
+      if (!el || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      if (el.scrollWidth <= el.clientWidth) return;
+      el.scrollLeft += e.deltaY;
+      e.preventDefault();
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
   function nudge(dir: 1 | -1) {
     const el = scrollRef.current;
     if (!el) return;
