@@ -26,6 +26,7 @@ import {
   Gamepad2,
   Repeat,
   RotateCcw,
+  Award,
 } from "lucide-react";
 import {
   buildChoicesForMode,
@@ -69,6 +70,8 @@ const AUTO_LABELS: Record<AutoMode, string> = {
 const AUTO_ORDER: AutoMode[] = ["off", "fast", "slow", "slower"];
 // How often a re-surfaced wrong answer is preferred over a fresh random pick.
 const REVIEW_PROB = 0.35;
+// Length of a "perfect run" — fills the dot tracker and earns a diploma.
+const STREAK_GOAL = 10;
 // Cap the wrong-queue so it can't grow unboundedly across a long session.
 const WRONG_QUEUE_MAX = 60;
 
@@ -421,6 +424,10 @@ export function Quiz({
   const [reportsOpen, setReportsOpen] = useState(false);
   const [autoMode, setAutoMode] = useState<AutoMode>("slow");
   const [review, setReview] = useState(false);
+  // The milestone streak currently being celebrated (10, 20, …) or null.
+  const [celebrate, setCelebrate] = useState<number | null>(null);
+  const celebrateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMilestone = useRef(0);
 
   // Hydrate persisted preferences after mount (SSR-safe).
   useEffect(() => {
@@ -531,6 +538,30 @@ export function Quiz({
       if (advanceTimer.current) clearTimeout(advanceTimer.current);
     };
   }, [state.phase, autoMode]);
+
+  // Fire the diploma every time the streak crosses a multiple of STREAK_GOAL.
+  useEffect(() => {
+    const s = state.streak;
+    if (s === 0) {
+      lastMilestone.current = 0;
+      return;
+    }
+    if (s % STREAK_GOAL === 0 && s !== lastMilestone.current) {
+      lastMilestone.current = s;
+      setCelebrate(s);
+      if (celebrateTimer.current) clearTimeout(celebrateTimer.current);
+      celebrateTimer.current = setTimeout(() => setCelebrate(null), 5000);
+    }
+  }, [state.streak]);
+
+  useEffect(() => {
+    if (!celebrate) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setCelebrate(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [celebrate]);
 
   const current = state.current;
   const accuracy = useMemo(
@@ -786,9 +817,12 @@ export function Quiz({
         })}
       </div>
 
-      <p className="mt-4 text-center text-[11px] text-ink-muted">
-        Press <Kbd>1</Kbd>–<Kbd>4</Kbd> to answer · <Kbd>Enter</Kbd> for next
-      </p>
+      <div className="mt-4 flex flex-col items-center gap-2.5">
+        <StreakDots streak={state.streak} />
+        <p className="text-center text-[11px] text-ink-muted">
+          Press <Kbd>1</Kbd>–<Kbd>4</Kbd> to answer · <Kbd>Enter</Kbd> for next
+        </p>
+      </div>
 
       {/* Copy-confirmation toast */}
       <div
@@ -806,6 +840,15 @@ export function Quiz({
       </div>
 
       {reportsOpen && <ReportsModal onClose={() => setReportsOpen(false)} />}
+
+      {celebrate && (
+        <StreakDiploma
+          milestone={celebrate}
+          category={category}
+          mode={mode}
+          onClose={() => setCelebrate(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1035,5 +1078,115 @@ function Kbd({ children }: { children: React.ReactNode }) {
     <span className="mx-0.5 inline-flex min-w-[1.4em] items-center justify-center rounded border border-black/10 bg-white/80 px-1 text-[10px] font-semibold text-ink-soft shadow-sm">
       {children}
     </span>
+  );
+}
+
+function StreakDots({ streak }: { streak: number }) {
+  // Dots count toward the next goal: 1–10 fill, 10 fills all, 11 wraps to 1.
+  const filled = streak === 0 ? 0 : ((streak - 1) % STREAK_GOAL) + 1;
+  const perfect = filled === STREAK_GOAL;
+  return (
+    <div
+      className="inline-flex items-center gap-1.5"
+      role="img"
+      aria-label={`Streak ${streak} — ${filled} of ${STREAK_GOAL} toward a diploma`}
+    >
+      {Array.from({ length: STREAK_GOAL }, (_, i) => {
+        const on = i < filled;
+        return (
+          <span
+            key={i}
+            className={
+              "h-1.5 w-1.5 rounded-full transition-all duration-300 " +
+              (on
+                ? (perfect ? "bg-amber-400 " : "bg-green-500 ") + "scale-110"
+                : "bg-black/15")
+            }
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+const CONFETTI_COLORS = ["#16a34a", "#f59e0b", "#3b82f6", "#ec4899", "#0a0a0a"];
+
+function Confetti() {
+  const pieces = useMemo(
+    () =>
+      Array.from({ length: 28 }, () => ({
+        left: Math.random() * 100,
+        delay: Math.random() * 0.4,
+        dur: 1.8 + Math.random() * 1.4,
+        color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+        w: 5 + Math.random() * 6,
+        h: 8 + Math.random() * 8,
+      })),
+    [],
+  );
+  return (
+    <div aria-hidden className="pointer-events-none fixed inset-0 overflow-hidden">
+      {pieces.map((p, i) => (
+        <span
+          key={i}
+          className="absolute top-0 rounded-[1px]"
+          style={{
+            left: `${p.left}%`,
+            width: p.w,
+            height: p.h,
+            background: p.color,
+            animation: `confettiFall ${p.dur}s cubic-bezier(.2,.6,.3,1) ${p.delay}s forwards`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function StreakDiploma({
+  milestone,
+  category,
+  mode,
+  onClose,
+}: {
+  milestone: number;
+  category: CategoryKey;
+  mode: GameMode;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${milestone} in a row`}
+    >
+      <div className="frost-backdrop absolute inset-0 animate-fade-in" />
+      <Confetti />
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="frost animate-diploma relative w-full max-w-xs rounded-[28px] p-7 text-center"
+      >
+        <div className="pointer-events-none absolute inset-2 rounded-[22px] border border-black/[0.08]" />
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-amber-100 text-amber-700 ring-4 ring-amber-200/60">
+          <Award size={28} strokeWidth={2} />
+        </div>
+        <div className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted">
+          Perfect run
+        </div>
+        <h2 className="mt-1 text-2xl font-bold leading-tight text-ink">
+          {milestone} in a row!
+        </h2>
+        <p className="mt-2 text-[12.5px] leading-snug text-ink/70">
+          {milestone} correct in a row · {modeMeta(mode).label} ·{" "}
+          {categoryLabel(category)}
+        </p>
+        <button onClick={onClose} className="pill-solid focus-ring mx-auto mt-5">
+          Keep going
+          <ArrowRight size={15} strokeWidth={2.2} />
+        </button>
+      </div>
+    </div>
   );
 }
