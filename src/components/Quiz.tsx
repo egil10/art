@@ -26,13 +26,14 @@ import {
   Repeat,
   RotateCcw,
   Award,
+  Feather,
+  Image as ImageIcon,
 } from "lucide-react";
 import {
   buildChoicesForMode,
   categoryLabel,
   imageUrl,
-  imageSrcSet,
-  QUIZ_IMAGE_SIZES,
+  heroImageProps,
   modeMeta,
   paintingNationality,
   paintingsFor,
@@ -41,6 +42,7 @@ import {
   wikipediaUrl,
   type CategoryKey,
   type GameMode,
+  type ImageQuality,
   type Painting,
 } from "@/lib/paintings";
 import {
@@ -64,9 +66,13 @@ import { Wordmark } from "./Wordmark";
 
 type Phase = "idle" | "answered";
 type AutoMode = "off" | "fast" | "slow" | "slower";
+// Subset of the (non-standard) Network Information API we read for the
+// data-saver default. Not in lib.dom, so we type just what we use.
+type NetworkInfo = { saveData?: boolean; effectiveType?: string };
 
 const AUTO_KEY = "canvas.autoAdvance.v1";
 const REVIEW_KEY = "canvas.reviewWrong.v1";
+const QUALITY_KEY = "canvas.imgQuality.v1";
 const AUTO_DELAYS: Record<AutoMode, number> = {
   off: 0,
   fast: 1000,
@@ -454,6 +460,10 @@ export function Quiz({
   const [reportsOpen, setReportsOpen] = useState(false);
   const [autoMode, setAutoMode] = useState<AutoMode>("slow");
   const [review, setReview] = useState(false);
+  // Image quality: "high" (responsive srcset up to retina) vs "saver" (a small
+  // fixed width). Defaults to high, but a slow/save-data connection flips it to
+  // saver on first load unless the user has chosen otherwise.
+  const [quality, setQuality] = useState<ImageQuality>("high");
   // Persisted per-device Elo rating. Starts at the default for SSR, then
   // hydrates from localStorage after mount. `eloDelta` is the last change,
   // flashed in the badge then cleared.
@@ -473,6 +483,21 @@ export function Quiz({
     if (v && (AUTO_ORDER as string[]).includes(v)) setAutoMode(v as AutoMode);
     setReview(localStorage.getItem(REVIEW_KEY) === "1");
     setElo(loadElo());
+
+    // Image quality: honour a saved choice; otherwise default to "saver" when
+    // the browser reports Data Saver or a slow connection.
+    const q = localStorage.getItem(QUALITY_KEY);
+    if (q === "high" || q === "saver") {
+      setQuality(q);
+    } else {
+      const conn = (navigator as Navigator & { connection?: NetworkInfo })
+        .connection;
+      const slow =
+        !!conn &&
+        (conn.saveData === true ||
+          ["slow-2g", "2g", "3g"].includes(conn.effectiveType ?? ""));
+      if (slow) setQuality("saver");
+    }
   }, []);
 
   // Score each answered round once: the player vs the painting's obscurity.
@@ -513,6 +538,16 @@ export function Quiz({
       const next = !on;
       if (typeof window !== "undefined") {
         localStorage.setItem(REVIEW_KEY, next ? "1" : "0");
+      }
+      return next;
+    });
+  }
+
+  function toggleQuality() {
+    setQuality((q) => {
+      const next: ImageQuality = q === "high" ? "saver" : "high";
+      if (typeof window !== "undefined") {
+        localStorage.setItem(QUALITY_KEY, next);
       }
       return next;
     });
@@ -563,21 +598,23 @@ export function Quiz({
 
   useEffect(() => {
     for (const r of state.queue.slice(0, 3)) {
+      const p = heroImageProps(r.painting.image, quality);
       const img = new Image();
       img.decoding = "async";
-      // Mirror the displayed <img>'s srcset/sizes so the browser preloads the
-      // exact candidate it will later render (previously it preloaded a width
-      // the <img> never requested, wasting the fetch).
-      img.sizes = QUIZ_IMAGE_SIZES;
-      img.srcset = imageSrcSet(r.painting.image);
-      img.src = imageUrl(r.painting.image, 1024);
+      // Mirror the displayed <img>'s attributes so the browser preloads the
+      // exact candidate it will later render (matching the quality setting).
+      if (p.srcSet) {
+        img.srcset = p.srcSet;
+        if (p.sizes) img.sizes = p.sizes;
+      }
+      img.src = p.src;
       // Warm the tiny blur-up placeholder too, so the next painting's
       // placeholder is already cached the moment it becomes current.
       const lq = new Image();
       lq.decoding = "async";
       lq.src = imageUrl(r.painting.image, 64);
     }
-  }, [state.queue]);
+  }, [state.queue, quality]);
 
   useEffect(() => {
     setImgReady(false);
@@ -665,6 +702,7 @@ export function Quiz({
   if (!current) return null;
   const answered = state.phase === "answered";
   const correct = state.picked === current.target;
+  const hero = heroImageProps(current.painting.image, quality);
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 pb-12 pt-3 sm:pt-6">
@@ -744,6 +782,23 @@ export function Quiz({
             )}
             <span className="hidden sm:inline">Review</span>
           </button>
+          <button
+            onClick={toggleQuality}
+            className="pill-glass focus-ring shrink-0"
+            aria-label={`Image quality: ${
+              quality === "high" ? "high definition" : "data saver"
+            } — tap to toggle`}
+            title="Image quality — HD or data saver for slower networks"
+          >
+            {quality === "high" ? (
+              <ImageIcon size={14} strokeWidth={2} />
+            ) : (
+              <Feather size={14} strokeWidth={2} />
+            )}
+            <span className="hidden sm:inline">
+              {quality === "high" ? "HD" : "Lite"}
+            </span>
+          </button>
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5 md:w-[300px] md:justify-between">
@@ -815,9 +870,9 @@ export function Quiz({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 key={current.painting.id}
-                src={imageUrl(current.painting.image, 1024)}
-                srcSet={imageSrcSet(current.painting.image)}
-                sizes={QUIZ_IMAGE_SIZES}
+                src={hero.src}
+                srcSet={hero.srcSet}
+                sizes={hero.sizes}
                 fetchPriority="high"
                 alt=""
                 onLoad={() => setImgReady(true)}

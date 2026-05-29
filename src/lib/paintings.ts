@@ -102,6 +102,26 @@ export function imageSrcSet(
     where the fixed side panel sits beside it. */
 export const QUIZ_IMAGE_SIZES = "(min-width: 768px) min(640px, 60vw), 100vw";
 
+export type ImageQuality = "high" | "saver";
+
+/** Image attributes for the quiz hero, honouring the quality setting.
+    "saver" pins a single small width (ignoring device pixel ratio) so slow
+    networks pull a much lighter file; "high" serves a responsive srcset up to
+    retina widths. */
+export function heroImageProps(
+  filename: string,
+  quality: ImageQuality,
+): { src: string; srcSet?: string; sizes?: string } {
+  if (quality === "saver") {
+    return { src: imageUrl(filename, 640) };
+  }
+  return {
+    src: imageUrl(filename, 1024),
+    srcSet: imageSrcSet(filename),
+    sizes: QUIZ_IMAGE_SIZES,
+  };
+}
+
 export function wikipediaUrl(id: string) {
   // Wikidata Q-id → "Special:GoToLinkedPage" picks the English Wikipedia article if one exists.
   return `https://www.wikidata.org/wiki/Special:GoToLinkedPage?site=enwiki&itemid=${id}`;
