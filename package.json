@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "fetch:paintings": "node scripts/fetch-paintings.mjs"
+    "fetch:paintings": "node scripts/fetch-paintings.mjs && node scripts/derive-popular.mjs",
+    "derive:popular": "node scripts/derive-popular.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.460.0",

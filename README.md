@@ -18,10 +18,10 @@ npm run dev          # http://localhost:3000
 ## Refresh the painting set
 
 ```bash
-npm run fetch:paintings   # re-queries Wikidata SPARQL → src/data/paintings.json
+npm run fetch:paintings   # re-queries Wikidata SPARQL → public/paintings.json (+ popular seed)
 ```
 
-The fetch script pulls the most-linked paintings from Wikidata (sitelink count as a fame proxy), keeps at most 25 per artist, and tags each painting with one or more categories (`popular`, `impressionism`, `renaissance`, `modern`, `french`, `dutch`, `italian`, `all`). The dataset is bundled at build time so the quiz feels instant — images preload in a small look-ahead queue.
+The fetch script pulls the most-linked paintings from Wikidata (sitelink count as a fame proxy), keeps at most 25 per artist, and tags each painting with one or more categories (`popular`, `impressionism`, `renaissance`, `modern`, `french`, `dutch`, `italian`, `all`). It then runs `derive-popular.mjs` to write `public/paintings-popular.json` — the ~300 "popular" paintings, loaded first for a near-instant first paint while the full set streams in behind it. Both files are served `immutable` and busted via a `?v=` version in `usePaintings`. Images preload in a small look-ahead queue and use responsive `srcset`.
 
 ## Deploy
 

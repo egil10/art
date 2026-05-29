@@ -85,6 +85,23 @@ export function imageUrl(filename: string, width: number): string {
   return `${FILEPATH}${encodeURIComponent(filename)}?width=${width}`;
 }
 
+/** Default candidate widths for the quiz hero image. */
+export const IMAGE_WIDTHS = [480, 768, 1024, 1280] as const;
+
+/** Builds a responsive `srcset` so the browser fetches the right resolution
+    for the device — phones grab a small file, retina desktops a larger one,
+    instead of everyone downloading one oversized image. */
+export function imageSrcSet(
+  filename: string,
+  widths: readonly number[] = IMAGE_WIDTHS,
+): string {
+  return widths.map((w) => `${imageUrl(filename, w)} ${w}w`).join(", ");
+}
+
+/** `sizes` for the quiz hero: full viewport width on phones, ~half on desktop
+    where the fixed side panel sits beside it. */
+export const QUIZ_IMAGE_SIZES = "(min-width: 768px) min(640px, 60vw), 100vw";
+
 export function wikipediaUrl(id: string) {
   // Wikidata Q-id → "Special:GoToLinkedPage" picks the English Wikipedia article if one exists.
   return `https://www.wikidata.org/wiki/Special:GoToLinkedPage?site=enwiki&itemid=${id}`;

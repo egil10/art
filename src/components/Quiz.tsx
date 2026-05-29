@@ -32,6 +32,8 @@ import {
   buildChoicesForMode,
   categoryLabel,
   imageUrl,
+  imageSrcSet,
+  QUIZ_IMAGE_SIZES,
   modeMeta,
   paintingNationality,
   paintingsFor,
@@ -561,6 +563,11 @@ export function Quiz({
     for (const r of state.queue.slice(0, 3)) {
       const img = new Image();
       img.decoding = "async";
+      // Mirror the displayed <img>'s srcset/sizes so the browser preloads the
+      // exact candidate it will later render (previously it preloaded a width
+      // the <img> never requested, wasting the fetch).
+      img.sizes = QUIZ_IMAGE_SIZES;
+      img.srcset = imageSrcSet(r.painting.image);
       img.src = imageUrl(r.painting.image, 1024);
     }
   }, [state.queue]);
@@ -659,7 +666,9 @@ export function Quiz({
       <Wordmark className="fixed left-6 top-5 z-50 hidden xl:block" />
       {/* Top status bar */}
       <div className="flex items-center justify-between gap-2 pb-3">
-        <div className="flex min-w-0 items-center gap-1.5">
+        {/* On phones the controls scroll horizontally rather than squishing —
+            keeps every pill full-size and readable. They all fit on sm+. */}
+        <div className="-my-1 flex min-w-0 items-center gap-1.5 overflow-x-auto py-1 no-scrollbar">
           <Wordmark className="mr-1 hidden sm:inline-flex xl:hidden" />
           <button
             onClick={onChangeCategory}
@@ -736,7 +745,9 @@ export function Quiz({
             sub={state.total}
             accent={state.streak >= 3}
           />
-          <Stat label="Acc" value={`${accuracy}%`} subtle />
+          <div className="hidden sm:block">
+            <Stat label="Acc" value={`${accuracy}%`} subtle />
+          </div>
           <button
             onClick={() => {
               if (reported) setReportsOpen(true);
@@ -784,7 +795,10 @@ export function Quiz({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 key={current.painting.id}
-                src={imageUrl(current.painting.image, 1280)}
+                src={imageUrl(current.painting.image, 1024)}
+                srcSet={imageSrcSet(current.painting.image)}
+                sizes={QUIZ_IMAGE_SIZES}
+                fetchPriority="high"
                 alt=""
                 onLoad={() => setImgReady(true)}
                 onError={() => setImgReady(true)}

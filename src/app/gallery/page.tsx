@@ -17,6 +17,7 @@ import {
   CATEGORIES,
   categoryLabel,
   imageUrl,
+  imageSrcSet,
   paintingsFor,
   wikipediaUrl,
   type CategoryKey,
@@ -174,6 +175,8 @@ export default function GalleryPage() {
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={imageUrl(p.image, 320)}
+                      srcSet={imageSrcSet(p.image, [240, 320, 480, 640])}
+                      sizes="(min-width: 1024px) 20vw, (min-width: 640px) 33vw, 50vw"
                       alt={p.title}
                       loading="lazy"
                       decoding="async"
@@ -432,8 +435,11 @@ function PaintingDetail({
           <div className="relative aspect-[16/11] w-full bg-canvas-warm">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={imageUrl(painting.image, 1600)}
+              src={imageUrl(painting.image, 1024)}
+              srcSet={imageSrcSet(painting.image, [768, 1024, 1280, 1600])}
+              sizes="(min-width: 768px) 768px, 100vw"
               alt={painting.title}
+              decoding="async"
               className="h-full w-full object-contain"
             />
           </div>
