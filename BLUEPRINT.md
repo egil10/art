@@ -1,77 +1,109 @@
 # Quiz Site Blueprint
 
-A portable spec for rebuilding a quiz website with the same look, feel, and
-architecture as **Canvas** (a "guess the painter" art quiz). Drop this file into
-a fresh repo and hand it to a coding agent: it captures the design system,
-UX principles, and code patterns so you can re-skin the framework for any
-multiple-choice topic (flags, capitals, logos, movies, pokémon, etc.).
+A deep, portable spec for building a quiz website with the same look, feel,
+architecture, and polish as **artguessr** (a "guess the painter" art quiz).
+Drop this file into a fresh repo and hand it to a coding agent: it captures the
+design system, UX rules, data architecture, performance playbook, every pitfall
+we hit (with the fix), the deployment + custom-domain process, and the owner's
+working preferences — so building the next quiz site is mostly assembly.
 
-> When adapting: keep the **design system** and **architecture** verbatim, and
-> swap only the **data model** + **game modes** for your topic. The whole feel
-> comes from the glass/pill language and the "instant, keyboard-first, no layout
-> jump" interaction rules below — preserve those.
+> **How to use this doc.** Keep the **design system** (§3) and **architecture**
+> (§5–§9) verbatim. Swap only the **data model** + **game modes** (§5) for your
+> topic. The personality lives in §3–§4; the speed lives in §7; the
+> don't-repeat-our-mistakes lives in §10. Read §11 (preferences) before making
+> any judgment call.
+
+---
+
+## Table of contents
+
+1. What this is
+2. Tech stack & file map
+3. Design system (copy verbatim)
+4. UX patterns that make it feel good
+5. Data model & pipeline
+6. Progressive loading & caching
+7. Image performance playbook
+8. The Elo rating system
+9. State management & persistence patterns
+10. Header / layout system
+11. Pitfalls & hard-won lessons (read this!)
+12. Deployment & custom domains (Squarespace → Vercel)
+13. Owner's working style & preferences
+14. Re-skinning checklist for a new topic
+15. Quick-reference cheatsheet
 
 ---
 
 ## 1. What this is
 
 An **endless multiple-choice quiz**. One question at a time: a prompt (here, a
-painting image) plus four answer pills. Pick one → instant reveal (correct /
-not quite) with context → next. No scoring screen, no "game over" — you just
-keep going. A searchable **gallery** browses the full dataset, and an **Elo
-rating** (per-device) tracks skill over time.
+painting image) plus four answer pills. Pick one → instant reveal
+(correct/not quite) with context → next. No score screen, no "game over" — you
+keep going. A searchable **gallery** browses the full dataset, and a per-device
+**Elo rating** tracks skill over time.
 
-Core feeling to preserve:
-- **Instant.** Data is bundled/preloaded; the next few questions' images
-  prefetch so advancing never waits on the network.
-- **Keyboard-first.** `1`–`4` to answer, `Enter`/`Space`/`→` for next.
-- **No layout jump.** The reveal panel is fixed-height; answering never shifts
-  the page. Auto-advance is optional and user-controlled.
-- **Calm, glassy, paper-warm.** Frosted translucent surfaces floating over a
-  soft warm-paper gradient. No hard chrome, no solid toolbars.
+The feelings to preserve, in priority order:
+
+1. **Instant.** You never wait. Data is seeded + cached; images blur-up from a
+   tiny placeholder and the next few preload. Advancing is immediate.
+2. **Calm & gallery-like.** Frosted translucent glass floating over a warm-paper
+   gradient. No hard chrome, no solid toolbars, generous radii.
+3. **Keyboard-first.** `1`–`4` to answer, `Enter`/`Space`/`→` for next.
+4. **No layout jump.** The reveal panel is fixed-height; answering never shifts
+   the page.
+5. **Clean header.** Controls never squish or reflow when state changes (this
+   took several iterations — see §10).
 
 ---
 
-## 2. Tech stack
+## 2. Tech stack & file map
 
-- **Next.js (App Router)** + **React 19**, all `"use client"` components — it's
-  a client-side SPA-style app served statically.
+- **Next.js 16 (App Router)** + **React 19**. Every component is `"use client"` —
+  it's a statically-served client app, not an SSR/data-fetching app.
 - **TypeScript**, strict.
-- **Tailwind CSS** with a small custom design-token layer (below).
-- **lucide-react** for icons.
-- **No backend, no database.** Data is a static JSON file in `public/`.
-  Per-user state (rating, prefs, reports) lives in `localStorage`.
-- **Deploys to Vercel** as fully static pages.
+- **Tailwind CSS** + a small custom token/component layer (§3).
+- **lucide-react** for icons. **No emojis in the UI, ever** (see §11).
+- **next/font/google** for one display face (the wordmark only).
+- **No backend, no database.** Data is static JSON in `public/`. Per-user state
+  (Elo, prefs, reports) lives in `localStorage`.
+- **Deploys to Vercel**, fully static. Pushing `main` auto-deploys.
 
 ```
 src/
   app/
-    layout.tsx        # root html/body, metadata, viewport
+    layout.tsx        # root html/body, metadata, viewport, display font wiring
     globals.css       # design tokens + component classes (the design system)
+    icon.svg          # favicon (App Router auto-serves app/icon.svg)
     page.tsx          # quiz route — owns category/mode state, renders <Quiz>
-    gallery/page.tsx  # searchable grid + filter strip + detail modal
+    gallery/page.tsx  # searchable grid + scrollable filter strip + detail modal
   components/
-    Quiz.tsx          # the game: reducer state machine, reveal panels, streaks
-    EloBadge.tsx      # top-right rating badge + history sparkline panel
-    CategoryPicker.tsx / ModePicker.tsx  # full-screen choosers
+    Quiz.tsx          # the game: reducer state machine, reveal panels, streaks, Elo wiring
+    EloBadge.tsx      # rating badge (dynamic icon) + history line chart panel
+    Wordmark.tsx      # the "artguessr" brand mark (hard-reload link)
+    CategoryPicker.tsx / ModePicker.tsx   # full-screen frosted choosers
     ReportsModal.tsx  # queue of user-flagged items
   lib/
-    paintings.ts      # data types, category/mode defs, choice builder, seeded RNG
-    usePaintings.ts   # fetch + in-memory cache of the dataset
-    elo.ts            # pure Elo maths + localStorage persistence
+    paintings.ts      # types, category/mode defs, choice builder, seeded RNG, image helpers
+    usePaintings.ts   # progressive fetch + in-memory cache of the dataset
+    elo.ts            # pure Elo maths + localStorage persistence + status classifier
     reports.ts        # localStorage-backed "report this item" queue
   scripts/
-    fetch-*.mjs       # data pipeline (queries a source, writes public/data.json)
+    fetch-paintings.mjs   # Wikidata SPARQL → public/paintings.json
+    derive-popular.mjs    # full set → public/paintings-popular.json (the seed)
 public/
-  paintings.json      # the dataset, sorted by "fame" (most notable first)
+  paintings.json          # full dataset (~2.75 MB), sorted by fame (most notable first)
+  paintings-popular.json  # ~300 popular paintings (~83 KB) for instant first paint
+next.config.mjs           # immutable cache headers for the data files; image remotePatterns
+CLAUDE.md                 # agent working agreements (always push, validation, etc.)
 ```
 
 ---
 
-## 3. Design system (copy this verbatim)
+## 3. Design system (copy verbatim)
 
-The entire visual identity is ~170 lines of CSS plus a handful of Tailwind
-tokens. Reproduce both files and you have the look.
+The entire visual identity is ~170 lines of CSS + a handful of Tailwind tokens.
+Reproduce both and you have the look.
 
 ### 3.1 Tailwind tokens (`tailwind.config.ts`)
 
@@ -80,6 +112,7 @@ theme: {
   extend: {
     fontFamily: {
       sans: ["ui-sans-serif","-apple-system","BlinkMacSystemFont","Inter","SF Pro Text","Segoe UI","sans-serif"],
+      display: ["var(--font-display)", "ui-sans-serif", "sans-serif"], // the wordmark face
     },
     colors: {
       ink:    { DEFAULT: "#0a0a0a", soft: "#1c1c1e", muted: "#6b7280" },
@@ -100,7 +133,22 @@ theme: {
 }
 ```
 
-### 3.2 Tokens + component classes (`globals.css`)
+### 3.2 The display font (wordmark)
+
+Loaded via `next/font/google` in `layout.tsx`, exposed as a CSS variable, and
+used **only** for the brand wordmark — body stays on the system sans stack.
+
+```tsx
+import { Syne } from "next/font/google";
+const display = Syne({ subsets: ["latin"], variable: "--font-display", display: "swap" });
+// <body className={`min-h-dvh antialiased font-sans ${display.variable}`}>
+```
+
+Syne is a deliberately artsy/geometric/modern face — fits a gallery brand. The
+owner's taste is **"artsy, minimal, modern"** display type; Syne, Fraunces,
+Instrument Serif, Space Grotesk are all on-brand candidates.
+
+### 3.3 Tokens + component classes (`globals.css`)
 
 ```css
 @tailwind base; @tailwind components; @tailwind utilities;
@@ -130,8 +178,8 @@ html, body {
 button { font: inherit; }
 
 @layer components {
-  /* Translucent floating surfaces. `glass` for pills/cards, `glass-strong`
-     for the main content card, `frost` for modals (near-opaque so text reads). */
+  /* Translucent floating surfaces. `glass` for pills/cards, `glass-strong` for
+     the main content card, `frost` for modals (near-opaque so text reads). */
   .glass {
     background: var(--glass-bg);
     backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
@@ -168,70 +216,84 @@ button { font: inherit; }
 *::-webkit-scrollbar-thumb { background: rgba(10,10,10,.16); border: 3px solid transparent; border-radius: 999px; background-clip: padding-box; }
 *::-webkit-scrollbar-thumb:hover { background-color: rgba(10,10,10,.32); background-clip: padding-box; }
 * { scrollbar-width: thin; scrollbar-color: rgba(10,10,10,.18) transparent; }
+/* Hide scrollbar entirely on horizontal control/filter strips. */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Celebration (streak milestones) */
+@keyframes confettiFall { 0% { transform: translateY(-12vh) rotate(0); opacity:0 } 8% { opacity:1 } 100% { transform: translateY(108vh) rotate(720deg); opacity:0 } }
+@keyframes diplomaPop { 0% { transform: scale(.82) translateY(12px); opacity:0 } 55% { transform: scale(1.04) translateY(0); opacity:1 } 100% { transform: scale(1) translateY(0); opacity:1 } }
+.animate-diploma { animation: diplomaPop 440ms cubic-bezier(.2,.8,.3,1.1) both; }
+@media (prefers-reduced-motion: reduce) { .animate-diploma { animation: none; } }
 ```
 
-### 3.3 Visual rules of thumb
+### 3.4 Visual rules of thumb
 
 - **Surfaces float; nothing is a solid bar.** Toolbars are a row of individual
-  frosted pills over the scrolling content (`sticky top-0 z-30`, no background
-  band). Cards use `glass-strong` with large soft shadows and `rounded-[28px]`.
-- **Radii are generous:** pills are full `rounded-full`; cards `rounded-[28px]`
-  / `rounded-3xl`; inner chips `rounded-2xl`.
-- **Color is restrained.** Almost everything is `ink` on `canvas`. Use
-  `text-ink-muted` (#6b7280) for secondary text. Reserve green (`--good`) and
-  red (`--bad`) strictly for correct/incorrect feedback. One amber accent for
-  streaks/achievements.
-- **Type:** system sans stack, tight headings (`font-bold leading-tight`), tiny
-  uppercase labels (`text-[11px] font-semibold uppercase tracking-wider text-ink-muted`).
+  frosted pills over scrolling content (`sticky top-0 z-30`, no background band).
+  Cards use `glass-strong` + large soft shadows + `rounded-[28px]`.
+- **Radii are generous:** pills `rounded-full`; cards `rounded-[28px]`/`rounded-3xl`;
+  inner chips `rounded-2xl`.
+- **Color is restrained.** Almost everything is `ink` on `canvas`.
+  `text-ink-muted` (#6b7280) for secondary text. Green (`--good`) / red (`--bad`)
+  **only** for correct/incorrect. One amber accent for streaks/achievements.
+- **Type:** system sans; tight headings (`font-bold leading-tight`); tiny uppercase
+  labels (`text-[11px] font-semibold uppercase tracking-wider text-ink-muted`).
 - **Numbers use `tabular-nums`** so scores/ratings don't jitter.
-- **Motion is brief and soft:** `animate-pop` for entering cards, `animate-fade-up`
-  for reveals/flashes, `animate-fade-in` for modal backdrops. Always respect
+- **Motion is brief & soft:** `animate-pop` (entering cards), `animate-fade-up`
+  (reveals), `animate-fade-in` (modal backdrops). Always honour
   `prefers-reduced-motion`.
+- **Icons:** lucide, `size={13–16}`, `strokeWidth={2}` (≈2.2 when emphasised).
+  **Never emojis.**
+- **The wordmark** is a two-tone lowercase mark — `art` in `ink`, `guessr` in
+  `ink-muted` — in the display font. It's a plain `<a href="/">` (full reload =
+  hard reset). On wide screens it floats into the left gutter (`fixed`, `hidden
+  xl:block`); below that it sits inline.
 
 ---
 
-## 4. UX patterns (the parts that make it feel good)
+## 4. UX patterns that make it feel good
 
-1. **Fixed-height reveal, no jump.** Desktop uses a fixed-width side panel that
-   swaps between an "idle" state (round number, mode, best streak) and a
-   "reveal" state (correct/not + the answer + context). The prompt card never
-   resizes. Mobile shows the reveal as an overlay pinned to the bottom of the
-   image.
-2. **Keyboard-first.** Global `keydown`: digits `1`–`4` answer while idle;
+1. **Fixed-height reveal, no jump.** Desktop has a fixed-width side panel
+   (`md:w-[300px]`) that swaps between an *idle* state (round #, mode, best
+   streak) and a *reveal* state (correct/not + answer + context). The prompt
+   card never resizes. Mobile shows the reveal as an overlay pinned to the
+   bottom of the image.
+2. **Keyboard-first.** A global `keydown`: digits `1`–`4` answer while idle;
    `Enter`/`Space`/`→` advance after answering. Ignore keys when focus is in an
-   input.
-3. **Optional auto-advance.** A pill cycles Manual → 1s → 3s → 5s; persisted to
-   `localStorage`. A timer fires `next` after the reveal.
-4. **Image preloading.** Maintain a small look-ahead queue (the next ~3
-   questions). On each render, `new Image()` their sources so advancing is
-   instant. The dataset itself is fetched once and cached in a module-level
-   variable.
+   `INPUT`/`TEXTAREA`.
+3. **Optional auto-advance.** A pill cycles Manual → 1s → 3s → 5s, persisted to
+   `localStorage`. A timer fires "next" after the reveal.
+4. **Image preloading + blur-up.** See §7 — this is the single biggest
+   feel-good lever.
 5. **Streaks + celebration.** Track current/best streak; a dot tracker fills
-   toward a goal (10), and crossing a multiple fires a confetti "diploma" modal.
+   toward a goal (10); crossing a multiple fires a confetti "diploma" modal.
 6. **Review mode.** Wrong answers go into a capped queue; when "Review" is on,
-   there's a probability each round re-surfaces an item you missed.
+   a probability each round re-surfaces a missed item.
 7. **Report flow.** Every item has a flag button that copies a markdown line to
    the clipboard and queues it in `localStorage` — a zero-backend way to collect
    data-quality feedback ("paste it back in chat").
-8. **Per-device Elo (see §6).** Top-right badge; click for a sparkline history.
+8. **Per-device Elo (§8).** Top-right badge; the rating *change* shows inside
+   the green/red answer feedback, not in the badge.
+9. **HD / data-saver toggle (§7).** A flag-styled icon button, auto-defaulting
+   to saver on slow connections.
 
 ---
 
-## 5. Data model + pipeline
+## 5. Data model & pipeline
 
 The dataset is a flat JSON array in `public/`, **sorted by notability** (most
-famous first) — that ordering is itself a signal (used for "Popular" tagging and
-Elo difficulty). Each item is small and self-describing:
+famous first). That ordering is itself a signal — used both for the "Popular"
+tag (top 300) and for Elo difficulty (§8). Each item is small and
+self-describing:
 
 ```ts
-type Item = {
-  id: string;            // stable source id (e.g. Wikidata Q-number)
+type Painting = {
+  id: string;            // stable source id (Wikidata Q-number)
   title: string;
   artist: string;        // the primary "answer" field
   year: string | null;
-  image: string;         // source filename, resolved to a URL at render
+  image: string;         // Commons filename, resolved to a URL at render time
   cats: string[];        // category tags this item belongs to
   mv: string | null;     // extra facets usable as alternate answer modes
   loc: string | null;
@@ -239,81 +301,190 @@ type Item = {
 };
 ```
 
-**Categories** are declared as a typed list (`key`, `label`, `hint`, `group`),
-grouped for the picker UI (e.g. "starts", "movement", "subject", "origin").
-Filtering is just `items.filter(i => i.cats.includes(key))`.
+The raw sitelink/fame count is **dropped** from the shipped file to save bytes —
+the array index *is* the fame rank. Keep it that way; recover rank with a
+`Map<id, index>` at runtime if you need it (we do, for Elo).
 
-**Game modes** turn different fields into the answer. Each mode is `(item) =>
-answerString | null`; items lacking that field are filtered out of the pool for
-that mode. Modes here: painter / title / movement / country / decade.
+**Categories** are a typed list (`key`, `label`, `hint`, `group`), grouped for
+the picker UI ("starts" / "movement" / "subject" / "origin"). Filtering is just
+`items.filter(i => i.cats.includes(key))`.
 
-**Choice builder:** take the correct answer, then pull 3 distinct distractors of
-the same type from the pool, shuffle. Use a **seeded RNG** (small mulberry32-style
-PRNG) so question generation is deterministic per seed — important for the
-weighted picker and reproducibility.
+**Game modes** turn different fields into the answer. Each mode is
+`(item) => answerString | null`; items lacking that field are filtered out of
+the pool for that mode. (painter / title / movement / country / decade.)
 
-**Smart question picker** (the thing that stops it feeling repetitive): sample K
+**Choice builder:** take the correct answer, pull 3 distinct distractors of the
+same type from the pool, shuffle. Use a **seeded RNG** (mulberry32-style) so
+generation is deterministic per seed — important for the weighted picker and
+reproducibility.
+
+**Smart question picker** (what stops it feeling repetitive): sample K
 candidates and weight them by
-- strong penalty if the item was shown recently,
+- strong penalty if the *item* was shown recently,
 - decaying penalty if the *answer* (artist) appeared recently,
 - a `1/sqrt(frequency)` boost so under-represented answers surface more —
-then pick proportionally. Keep a recency window for items and for answers,
-scaled to pool size.
+then pick proportionally. Keep recency windows for items and answers, scaled to
+pool size. Top up a small look-ahead **queue** (~3 rounds) so images can preload.
 
-**Pipeline (`scripts/fetch-*.mjs`):** queries a structured source (here Wikidata
-SPARQL, tiered by sitelink count as a fame proxy), keeps the top N per answer to
-avoid one painter dominating, sorts by fame, tags categories, writes
-`public/data.json`. Bump a `DATA_VERSION` constant in the loader to bust browser
-cache when you regenerate. For a new topic, replace this script with whatever
-yields your `Item[]`.
+**Pipeline (`scripts/`):**
+- `fetch-paintings.mjs` queries Wikidata SPARQL, tiered by sitelink count, keeps
+  ≤~25 per artist (so one painter can't dominate), sorts by fame, tags
+  categories, marks the top 300 `popular`, writes `public/paintings.json`.
+- `derive-popular.mjs` filters that to the `popular` items → `paintings-popular.json`
+  (the instant-load seed). It's chained into `npm run fetch:paintings`.
+
+For a new topic, replace `fetch-*.mjs` with whatever yields your `Item[]` sorted
+by your notability metric, keep `derive-popular.mjs` (or adapt the seed filter),
+and **bump `DATA_VERSION`** so caches refresh.
 
 ---
 
-## 6. Elo rating (per-device, no backend)
+## 6. Progressive loading & caching
 
-Each question is a "match": the player (rating starts 1200) vs the item's
+**The problem we hit:** the full dataset is 2.75 MB (~608 KB gzipped). Fetching
+it on every load with `cache: "no-cache"` blocked the first paint *and* forced a
+network round-trip even when cached.
+
+**The fix (two parts):**
+
+1. **Seed + stream.** The default quiz only needs the ~300 "popular" paintings.
+   Ship them as `paintings-popular.json` (~18 KB gzipped). The hook loads the
+   seed first (quiz playable almost instantly), then loads the full set in
+   parallel and swaps it in seamlessly — the running game doesn't reset because
+   the reducer keys off ids, not array identity.
+
+2. **Immutable caching + version busting.** Files in `public/` default to
+   `Cache-Control: public, max-age=0, must-revalidate` on Vercel — i.e. a
+   revalidation round-trip every visit. Override it:
+
+   ```js
+   // next.config.mjs
+   async headers() {
+     const immutable = [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }];
+     return [
+       { source: "/paintings.json", headers: immutable },
+       { source: "/paintings-popular.json", headers: immutable },
+     ];
+   }
+   ```
+
+   and fetch with `cache: "force-cache"` against a **versioned URL**
+   (`/paintings.json?v=3`). The bytes at a given URL never change → safe to cache
+   forever; bumping `DATA_VERSION` makes a new URL that misses the cache. Repeat
+   visits then skip the network entirely.
+
+`usePaintings` shape (module-level cache so route changes don't refetch;
+SSR-safe; seed is best-effort, full is authoritative):
+
+```ts
+let full = null, seed = null, inflightFull = null, inflightSeed = null;
+// loadFull(): force-cache /paintings.json?v=…   → normalize → cache in `full`
+// loadSeed(): force-cache /paintings-popular.json?v=…
+export function usePaintings() {
+  const [paintings, setPaintings] = useState(full);
+  // on mount: if full cached → use it; else setPaintings(seed) then setPaintings(full)
+}
+```
+
+---
+
+## 7. Image performance playbook
+
+Images are the heaviest, most-repeated asset. The goal: **never look at a blank
+frame or spinner.** Four techniques, all in play:
+
+1. **Responsive `srcset`/`sizes`.** Don't ship one oversized image to everyone.
+   ```ts
+   export const IMAGE_WIDTHS = [480, 768, 1024, 1280] as const;
+   export function imageSrcSet(file, widths = IMAGE_WIDTHS) {
+     return widths.map(w => `${imageUrl(file, w)} ${w}w`).join(", ");
+   }
+   export const QUIZ_IMAGE_SIZES = "(min-width: 768px) min(640px, 60vw), 100vw";
+   ```
+   Phones grab a small file, retina desktops a larger one.
+
+2. **Look-ahead preloading that matches the displayed candidate.** Preload the
+   next ~3 queued images with `new Image()` — **and set the same `srcset`/`sizes`
+   on the preload object**, or the browser preloads a width the `<img>` never
+   requests and the work is wasted (this was a real bug — we preloaded `1024`
+   while the `<img>` rendered `1280`). Also warm the tiny blur-up placeholders.
+
+3. **Blur-up placeholder.** Render a tiny (`width=64`, ~1–3 KB) version of the
+   current image, blurred, behind the full one; the full image fades in over it
+   on load. So a category switch (a cold fetch you can't preload, because the
+   pick is fresh) shows the painting *blurry instantly* instead of blank. Keep
+   the placeholder `object-contain` like the real image so letterbox bars stay
+   warm paper, not filled with blur.
+
+4. **`fetchPriority="high"`** on the hero (it's the LCP element). In React 19 the
+   prop is camelCase `fetchPriority`.
+
+**HD / data-saver toggle.** A single small fixed width (`640`, no `srcset`,
+ignoring device pixel ratio) for "saver"; full responsive `srcset` for "high".
+Centralise in one helper used by both the `<img>` and the preloader:
+
+```ts
+export function heroImageProps(file, quality) {
+  if (quality === "saver") return { src: imageUrl(file, 640) };
+  return { src: imageUrl(file, 1024), srcSet: imageSrcSet(file), sizes: QUIZ_IMAGE_SIZES };
+}
+```
+
+**Auto-default to saver** from the (non-standard) Network Information API when
+the user hasn't chosen: `navigator.connection?.saveData === true` or
+`effectiveType ∈ {slow-2g, 2g, 3g}`. Persist the user's explicit choice.
+
+**The blur-up "ready" gotcha (important).** See §11 — deriving the ready state
+correctly is subtle because of cached images.
+
+---
+
+## 8. The Elo rating system
+
+Each question is a "match": the player (starts **800**) vs the painting's
 **difficulty**, derived from its fame rank (obscure = stronger opponent, worth
 more). Standard logistic Elo:
 
 ```
 expected = 1 / (1 + 10^((opponent - rating) / 400))
-rating   = rating + K * ((won ? 1 : 0) - expected)   // floored at 100
+rating   = clamp(rating + K * ((won ? 1 : 0) - expected), 100, ∞)
+opponentRating(rank, total) = lerp(700, 2000, rank / (total - 1))   // obscure → 2000
+K(games) = games < 30 ? 40 : games < 100 ? 24 : 16                  // provisional → settled
 ```
 
-- **Opponent rating** from rank: `MIN_OPP + (rank/(total-1)) * (MAX_OPP-MIN_OPP)`,
-  e.g. 700→2000.
-- **K-factor** tapers as you settle: 40 (<30 games) → 24 (<100) → 16.
-- **Persistence:** all state (`rating, peak, games, wins, history[]`) in
-  `localStorage` under a versioned key, behind `loadElo()/saveElo()` so it's
-  trivial to swap in a server later for cross-device accounts + leaderboards.
-- **UI:** a top-right pill shows the live rating with a `+N/-N` flash per answer;
-  clicking opens a `frost` panel with an inline SVG **sparkline** of the rating
-  history, plus peak / games / accuracy and a reset.
-
-**Persistence pattern (reuse for everything device-local):**
+State (`localStorage`, versioned key, behind `loadElo`/`saveElo` so a future
+accounts/leaderboard phase is a clean swap):
 
 ```ts
-const KEY = "app.feature.v1";          // always versioned
-export function load(): T {
-  if (typeof window === "undefined") return def();   // SSR-safe
-  try { return { ...def(), ...JSON.parse(localStorage.getItem(KEY) || "") }; }
-  catch { return def(); }
-}
-export function save(s: T) {
-  if (typeof window === "undefined") return;
-  try { localStorage.setItem(KEY, JSON.stringify(s)); } catch {}
-}
+type EloState = { rating; peak; low; games; wins; history: number[]; updatedAt };
 ```
 
-Hydrate after mount (`useState(def)` then `useEffect(() => setState(load()), [])`)
-so server and client render the same default and avoid hydration mismatch.
+- Track **both `peak` and `low`** (we added `low` late — needed for the badge
+  icon). On load, reconcile `peak`/`low` against `history`+`rating` so an older
+  blob can't claim a high/low the data contradicts.
+- **`history`** is capped (last ~250 ratings) to bound storage; it powers the
+  chart.
+
+**Dynamic badge icon** (`eloStatus`), all lucide, no emoji:
+`Trophy` (all-time high) · `Anchor` (all-time low) · `TrendingUp`/`TrendingDown`
+(short-term trend over the last ~4 answers) · `Minus` (steady). High/low take
+priority and require ≥5 games so it doesn't crown you instantly.
+
+**The rating change (`+12` / `−8`) renders inside the green/red answer
+feedback**, not in the badge — tie the number to the correctness cue. It shows
+for the whole reveal and clears when you advance.
+
+**History chart** (inline SVG, no chart lib): a line with a **rating y-axis** at
+"nice" round gridline steps (`1/2/2.5/5 ×10ⁿ`, ~4 lines) and a **question-number
+x-axis** with ticks only at round numbers (every 10, or every 100 for long
+histories). Color the line green/red by net direction.
 
 ---
 
-## 7. Game state shape
+## 9. State management & persistence patterns
 
-`Quiz` is a `useReducer` state machine — keep it **pure** (no `localStorage`/IO
-in the reducer; do side effects in effects). Sketch:
+**Game state = `useReducer`, kept pure.** No `localStorage`/IO/timers in the
+reducer — do side effects in `useEffect`. Sketch:
 
 ```ts
 type Phase = "idle" | "answered";
@@ -323,72 +494,238 @@ type State = {
   recent: Set<string>;       // item recency window
   recentArtists: string[];   // answer recency window
   wrong: string[];           // review queue (capped)
-  picked: string | null;
-  phase: Phase;
-  score: number; streak: number; best: number; total: number;
-  seed: number;
+  picked: string | null; phase: Phase;
+  score; streak; best; total; seed;
 };
 type Action =
-  | { type: "answer"; choice: string }
-  | { type: "next";  pool; mode; artistFreq; review: boolean }
-  | { type: "reset"; pool; mode; artistFreq; seed: number };
+  | { type: "answer"; choice }
+  | { type: "next";  pool; mode; artistFreq; review }
+  | { type: "reset"; pool; mode; artistFreq; seed };
 ```
 
-On `answer`: mark phase answered, update score/streak/best, push/clear the
-review queue. On `next`: maybe inject a review item, else shift from the
-look-ahead queue and top it back up (weighted picker), advance recency windows.
-Score Elo in an **effect** keyed on the phase transition, guarded by a ref so
-each round scores exactly once.
+Score Elo in an **effect** keyed on the answered transition, guarded by a ref so
+each round scores exactly once (`scoredRef = ${painting.id}:${total}`).
 
----
-
-## 8. Component inventory
-
-- **`<Quiz>`** — owns the game; renders prompt card + reveal panel + 4 choice
-  pills + streak dots + the Elo badge + status pills (category/mode/gallery/
-  auto-advance/review/report).
-- **`<EloBadge>`** — rating pill + history modal with SVG sparkline.
-- **`<CategoryPicker>` / `<ModePicker>`** — full-screen `frost` overlays listing
-  options grouped with counts.
-- **Gallery page** — sticky pill toolbar (back, search input, horizontally
-  scrollable **filter strip**), responsive image grid (2→5 cols) with infinite
-  scroll via `IntersectionObserver`, and a `glass-strong` detail modal.
-
-### Gotcha worth copying: drag-to-scroll vs click
-
-The filter strip supports mouse drag-to-scroll. **Do not call
-`setPointerCapture` on pointer-down** — capturing routes the subsequent `click`
-to the container instead of the child button, silently breaking plain clicks.
-Capture **lazily**, only after movement exceeds a threshold (~4px), and use a
-`moved` flag to suppress the click that ends a real drag:
+**localStorage pattern (reuse for every device-local feature):**
 
 ```ts
-function onPointerDown(e){ if (e.pointerType!=="mouse") return;
-  drag.current = { active:true, startX:e.clientX, startScroll:el.scrollLeft, moved:false, captured:false }; }
-function onPointerMove(e){ if(!drag.current.active) return;
-  const dx = e.clientX - drag.current.startX;
-  if (Math.abs(dx) > 4) {
-    drag.current.moved = true;
-    if (!drag.current.captured) { el.setPointerCapture(e.pointerId); drag.current.captured = true; }
-    el.scrollLeft = drag.current.startScroll - dx;
-  } }
-function onPointerUp(e){ if(!drag.current.active) return; drag.current.active=false;
-  if (drag.current.captured) { el.releasePointerCapture(e.pointerId); drag.current.captured=false; } }
-// pill onClick: if (drag.current.moved) return; else select(...)
+const KEY = "app.feature.v1";          // ALWAYS versioned
+export function load(): T {
+  if (typeof window === "undefined") return def();   // SSR-safe
+  try { return { ...def(), ...JSON.parse(localStorage.getItem(KEY) || "null") }; }
+  catch { return def(); }               // also: catch quota errors on save
+}
 ```
+
+**SSR hydration:** initialise `useState` with the default (so server and client
+first render match), then `useEffect(() => setState(load()), [])` after mount.
+Avoids hydration mismatch. Used for autoMode, review, Elo, and image quality.
+
+**Derive transient UI state from identity, not booleans reset in effects.** See
+§11 (the blur bug) — `const imgReady = loadedId === current.id` beats a
+`setImgReady(false)` reset that runs a frame late.
 
 ---
 
-## 9. Re-skinning checklist for a new topic
+## 10. Header / layout system
+
+This took the most iteration. Rules that finally made it clean:
+
+- **The header mirrors the cards below it.** The content row is
+  `painting card (flex-1)` + `gap-3` + `side panel (md:w-[300px])`. The header is
+  the same: left control group `flex-1`, right stat group `md:w-[300px]
+  md:justify-between`, `gap-3`. So the two rows' division lines up.
+- **`shrink-0` on every control/stat pill.** Flexbox's default is to shrink
+  items when space is tight — that's what squished "Auto 3s" when a long category
+  label changed width. `shrink-0` (+ `whitespace-nowrap` where needed) forbids
+  deformation.
+- **Fixed-width variable pills + font-step-down.** Category/Mode carry
+  variable-length labels. Give them a fixed desktop width (`md:w-40`, `md:w-32`)
+  and shrink the label one font step as it grows, truncating only as a last
+  resort:
+  ```ts
+  function fitLabel(label) { const n = label.length; return n > 13 ? "text-[11px]" : n > 10 ? "text-[12px]" : "text-sm"; }
+  ```
+  Result: toggling category/mode never reflows the header.
+- **Mobile: scroll, don't squish.** The left control group is
+  `flex-1 min-w-0 overflow-x-auto no-scrollbar` so on phones the controls scroll
+  horizontally at full size instead of truncating to nothing. (Add `-my-1 py-1`
+  so the focus ring isn't clipped by the overflow box.)
+- **Gutter-floated wordmark.** On `xl+` the wordmark is `fixed` in the left
+  gutter (real estate that's otherwise empty); below `xl` it's inline. This
+  declutters the toolbar on the widest screens.
+- **Compact icon buttons for secondary actions.** Report flag and the HD/Lite
+  toggle are 32px circular icon buttons (`grid h-8 w-8 place-items-center
+  rounded-full border`), dark `bg-ink` when "active". Text pills for these
+  overflow the row — keep them icon-only.
+- **Watch the fixed-width budget.** A 300px right group fits ~4 small items.
+  Adding a 5th means dropping one (we removed the standalone "Acc" pill — it's in
+  the Elo panel) rather than letting the group overflow its aligned width.
+
+---
+
+## 11. Pitfalls & hard-won lessons (read this!)
+
+Each of these cost real debugging time. Don't relearn them.
+
+**Drag-to-scroll eats clicks (`setPointerCapture`).** A horizontally
+draggable strip that called `el.setPointerCapture(e.pointerId)` on *pointerdown*
+made the browser dispatch the subsequent `click` to the *capturing container*,
+not the child button — so plain clicks on the pills silently did nothing.
+**Fix:** don't capture on press. Capture **lazily**, only once movement crosses a
+threshold (~4px), and use a `moved` flag to suppress the click that ends a real
+drag. Mouse-only; let touch keep native scrolling.
+
+**Blur-up placeholder showed sharp-then-blur and got stuck.** Two causes:
+(1) `imgReady` was reset to `false` in a *post-paint* effect, so for a cached
+image the sharp version flashed before the reset; (2) a cached/preloaded image
+can already be `complete` before React attaches `onLoad`, so `imgReady` never
+flipped back and the blur sat on top forever. **Fix:** derive readiness from
+*which* id has loaded (`const imgReady = loadedId === current.id`) instead of a
+reset boolean, and add a `ref` that checks `el.complete` on mount to catch cached
+images:
+```tsx
+<img key={id} ref={el => { if (el?.complete) setLoadedId(id); }} onLoad={() => setLoadedId(id)} … />
+```
+
+**Wasted image preload (width mismatch).** The look-ahead preloaded `width=1024`
+while the `<img>` rendered `width=1280` — different URLs, so every preload was
+thrown away. **Fix:** preload and display through one `heroImageProps` helper so
+the `src`/`srcSet`/`sizes` always match.
+
+**lucide `Image` shadows the global `Image` constructor.** Importing
+`{ Image }` from `lucide-react` breaks `new Image()` (used for preloading) in
+that module. **Fix:** alias it — `import { Image as ImageIcon } from "lucide-react"`.
+
+**`public/` files aren't cached by default on Vercel.** They ship
+`max-age=0, must-revalidate`. Big static JSON revalidates every visit. **Fix:**
+explicit `immutable` headers in `next.config.mjs` + a `?v=` versioned URL (§6).
+
+**`next lint` was removed in Next 16.** The `lint` script errors ("Invalid
+project directory"). Validate with `npx tsc --noEmit` + `npm run build` instead.
+Don't waste time debugging the lint script.
+
+**Flexbox squish on state change.** Covered in §10 — variable-width pills shrink
+their neighbours. `shrink-0` everywhere + fixed widths for variable labels.
+
+**Adding to a fixed-width group overflows it.** A `md:w-[300px]
+md:justify-between` group with `shrink-0` items will visibly overflow if the
+items sum past 300px (they can't shrink). Budget the items; drop or relocate
+one rather than breaking the aligned width.
+
+**Windows line-endings.** Git warns `LF will be replaced by CRLF` on commit.
+Harmless; ignore. (Optionally add a `.gitattributes` with `* text=auto eol=lf`.)
+
+**Show, don't assume, on "it's broken."** The owner reported the site "still
+under construction" — but it was live; their machine had stale DNS. Verify the
+public truth (`nslookup … 8.8.8.8`, `curl -sI https://domain`) before changing
+anything, then point them at `ipconfig /flushdns` / incognito / mobile data.
+
+---
+
+## 12. Deployment & custom domains (Squarespace → Vercel)
+
+**Hosting.** Connect the GitHub repo to a Vercel project once; thereafter
+**pushing `main` auto-deploys**. Manual: `npx vercel --prod`. CLI domain ops:
+`npx vercel link --yes --project <name>`, then `npx vercel domains add <domain>`
+(single-arg form once the project is linked), `npx vercel domains inspect <domain>`.
+
+**Custom domain bought at Squarespace, pointed at Vercel:**
+
+1. In Vercel, add both apex and `www` to the project.
+2. In Squarespace **DNS → DNS Settings**, *remove the parking records* or they
+   fight Vercel: the default `A @` records (`198.x`), the `www` CNAME →
+   `ext-sq.squarespace.com`, **and the `HTTPS @` record** (the `alpn=...` SVCB
+   one — it interferes with cert issuance). Leave email TXT (`_dmarc`,
+   `_domainkey`, SPF) and `_domainconnect` alone.
+3. Add the Vercel records:
+
+   | Type  | Name | Value |
+   |-------|------|-------|
+   | `A`     | `@`  | `76.76.21.21` |
+   | `CNAME` | `www`| `cname.vercel-dns.com` |
+
+   (Read the exact values back from `vercel domains add` — Vercel can hand out a
+   project-specific apex A record.)
+4. Don't change nameservers (keep Squarespace's) if you're using the A/CNAME
+   method.
+5. **HTTPS auto-issues after DNS verifies** — the TLS handshake will fail for a
+   few minutes (up to ~30) in the meantime; that's normal, not a misconfig.
+
+**The "still under construction" trap.** After correct DNS, the owner's browser
+showed Squarespace's parking page — stale local DNS, not a real problem. Confirm
+with `nslookup domain 8.8.8.8` (should be `76.76.21.21`) and
+`curl -sI https://domain` (should be `server: Vercel`, your `<title>`); then
+`ipconfig /flushdns`, hard-refresh, or test on mobile data.
+
+---
+
+## 13. Owner's working style & preferences
+
+Bake these into any judgment call so you don't have to ask:
+
+- **Always `git push` after committing.** Solo, continuously-deployed project —
+  commit to `main` and push; pushing triggers the Vercel deploy. No PR ceremony
+  unless asked. (Also in `CLAUDE.md`.)
+- **Aesthetic: clean, minimal, modern, "super clean".** Glass + warm paper +
+  pills. Generous whitespace and radii. Layout that *mirrors structure* (e.g.
+  header aligned to the cards) delights them.
+- **Icons: lucide only. NO EMOJIS in the UI.** Convey state with icon swaps +
+  color, not emoji.
+- **Fonts: artsy / minimal / modern** for brand type (Syne et al.).
+- **Speed matters: "never wait."** Perceived performance (blur-up, seeds,
+  preloading) is a feature they explicitly value.
+- **They like gamification & data:** Elo, trends, streaks, diplomas,
+  charts-over-time. Lean into tasteful stats.
+- **Iterative & trusting: "try it."** Make a tasteful default choice and ship it
+  rather than asking many questions; they'll react and refine. When you do make
+  a removal/trade-off (e.g. dropping the Acc pill), state it plainly and offer to
+  revert.
+- **Per-device persistence is fine to start; design for accounts later.** Keep
+  storage behind a thin `load/save` boundary.
+- **Validate before claiming done:** `npx tsc --noEmit` + `npm run build`. Report
+  honestly if something failed.
+- **Commit messages:** imperative subject, a short bulleted body of what/why,
+  trailer `Co-Authored-By: Claude …`.
+
+---
+
+## 14. Re-skinning checklist for a new topic
 
 1. Write `scripts/fetch-*.mjs` to produce `public/data.json` as `Item[]`, sorted
-   by your notability metric. Keep ids stable.
+   by your notability metric. Keep ids stable. Keep/adapt `derive-popular.mjs`
+   for the instant-load seed. **Bump `DATA_VERSION`.**
 2. Update the `Item` type + `CATEGORIES` + the `modeTarget(item, mode)` map for
    your facets. Everything downstream (pool filtering, choice building, Elo
-   difficulty) is generic.
-3. Replace the prompt rendering (here an `<img>`) with whatever your question is
-   — text, audio, a flag, a map. The 4-pill answer UI stays.
-4. Rename tokens/metadata (title, theme color) — but keep the glass/pill CSS.
-5. `npx vercel --prod`.
+   difficulty, picker) is generic.
+3. Replace the prompt rendering (here an `<img>`) with whatever your question is —
+   text, audio, a flag, a map. Keep the blur-up + responsive-image stack if it's
+   images. The 4-pill answer UI stays.
+4. Rename brand/metadata/wordmark/favicon. Keep the glass/pill CSS verbatim.
+5. Wire the cache headers in `next.config.mjs` for your data file(s).
+6. Add the custom domain per §12. `git push` to deploy.
 
-That's it. The framework is topic-agnostic; the personality is in §3–4.
+The framework is topic-agnostic; the personality is §3–§4, the speed is §6–§7,
+and the don't-trip-here is §11.
+
+---
+
+## 15. Quick-reference cheatsheet
+
+| Need | Do this |
+|------|---------|
+| Validate a change | `npx tsc --noEmit` && `npm run build` (not `next lint`) |
+| Refresh data | `npm run fetch:paintings`, then bump `DATA_VERSION` |
+| New device-local pref | versioned `localStorage` key, SSR-safe `load()`, hydrate in mount effect |
+| Cache a static asset hard | `immutable` header in `next.config` + `?v=` URL |
+| Responsive image | `imageSrcSet()` + a `sizes`; preload with the *same* srcset/sizes |
+| Never-blank image | 64px blur-up placeholder behind, fade real image in on load |
+| Image ready state | derive from loaded id + `ref` `el.complete`; don't reset a bool in an effect |
+| lucide image icon | `import { Image as ImageIcon }` (don't shadow `new Image()`) |
+| Draggable + clickable strip | capture pointer lazily past a move threshold; `moved` flag suppresses click |
+| Keep header from reflowing | `shrink-0` everywhere; fixed widths + `fitLabel` for variable pills |
+| Header ↔ cards alignment | left `flex-1`, right `md:w-[300px] md:justify-between`, shared `gap-3` |
+| Mobile overflow of controls | `overflow-x-auto no-scrollbar` (+ `-my-1 py-1`) |
+| Deploy | `git push` (auto) or `npx vercel --prod` |
+| Squarespace→Vercel DNS | delete parking A/`www`/`HTTPS` records; add `A @ 76.76.21.21` + `CNAME www cname.vercel-dns.com` |
+| Diagnose "wrong site showing" | `nslookup domain 8.8.8.8`, `curl -sI https://domain`; then flush DNS |
