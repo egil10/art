@@ -397,6 +397,7 @@ function PaintingDetail({
   onClose: () => void;
 }) {
   const [reported, setReported] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   return (
     <div
       role="dialog"
@@ -433,6 +434,18 @@ function PaintingDetail({
             </button>
           </div>
           <div className="relative aspect-[16/11] w-full bg-canvas-warm">
+            {/* Blur-up from the already-cached grid thumbnail so the detail
+                view shows the painting instantly while the full-res loads. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageUrl(painting.image, 320)}
+              alt=""
+              aria-hidden
+              className={
+                "absolute inset-0 h-full w-full object-contain blur-xl transition-opacity duration-300 " +
+                (loaded ? "opacity-0" : "opacity-100")
+              }
+            />
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={imageUrl(painting.image, 1024)}
@@ -440,7 +453,11 @@ function PaintingDetail({
               sizes="(min-width: 768px) 768px, 100vw"
               alt={painting.title}
               decoding="async"
-              className="h-full w-full object-contain"
+              onLoad={() => setLoaded(true)}
+              className={
+                "relative h-full w-full object-contain transition-opacity duration-500 " +
+                (loaded ? "opacity-100" : "opacity-0")
+              }
             />
           </div>
           <div className="px-5 py-3 text-[12px] text-ink-muted">

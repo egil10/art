@@ -16,7 +16,6 @@ import {
   ArrowRight,
   Sparkles,
   Layers,
-  Loader2,
   Images,
   ExternalLink,
   Hash,
@@ -572,6 +571,11 @@ export function Quiz({
       img.sizes = QUIZ_IMAGE_SIZES;
       img.srcset = imageSrcSet(r.painting.image);
       img.src = imageUrl(r.painting.image, 1024);
+      // Warm the tiny blur-up placeholder too, so the next painting's
+      // placeholder is already cached the moment it becomes current.
+      const lq = new Image();
+      lq.decoding = "async";
+      lq.src = imageUrl(r.painting.image, 64);
     }
   }, [state.queue]);
 
@@ -792,11 +796,22 @@ export function Quiz({
         <div className="relative min-w-0 flex-1 animate-pop">
           <div className="glass-strong relative overflow-hidden rounded-[28px]">
             <div className="relative aspect-[4/5] w-full bg-canvas-warm sm:aspect-[5/4]">
-              {!imgReady && (
-                <div className="absolute inset-0 grid place-items-center text-ink-muted">
-                  <Loader2 className="animate-spin" size={20} />
-                </div>
-              )}
+              {/* Blur-up placeholder: a tiny image loads near-instantly and
+                  shows the painting blurred while the full-res one streams in —
+                  so a category switch never lands on a blank frame or spinner.
+                  It's object-contain like the real image, so the letterbox
+                  bars stay warm paper rather than filling with blur. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                key={current.painting.id + "-lq"}
+                src={imageUrl(current.painting.image, 64)}
+                alt=""
+                aria-hidden
+                className={
+                  "absolute inset-0 h-full w-full object-contain blur-xl transition-opacity duration-300 " +
+                  (imgReady ? "opacity-0" : "opacity-100")
+                }
+              />
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 key={current.painting.id}
@@ -808,7 +823,7 @@ export function Quiz({
                 onLoad={() => setImgReady(true)}
                 onError={() => setImgReady(true)}
                 className={
-                  "h-full w-full object-contain transition duration-500 " +
+                  "relative h-full w-full object-contain transition-opacity duration-500 " +
                   (imgReady ? "opacity-100" : "opacity-0")
                 }
               />
