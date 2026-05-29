@@ -222,8 +222,17 @@ function FilterStrip({
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
   // Tracks an in-progress mouse drag so the click that ends it doesn't also
-  // trigger a category change.
-  const drag = useRef({ active: false, startX: 0, startScroll: 0, moved: false });
+  // trigger a category change. `captured` is set only once a drag actually
+  // starts — capturing on press would route the click to this container
+  // instead of the pill button, swallowing plain clicks.
+  const drag = useRef({
+    active: false,
+    startX: 0,
+    startScroll: 0,
+    moved: false,
+    captured: false,
+    pointerId: -1,
+  });
 
   const updateArrows = useCallback(() => {
     const el = scrollRef.current;
@@ -271,29 +280,45 @@ function FilterStrip({
     if (e.pointerType !== "mouse") return;
     const el = scrollRef.current;
     if (!el) return;
+    // Note: no setPointerCapture here — capturing on press would make the
+    // browser dispatch the click to this container rather than the pill,
+    // breaking plain clicks. We capture lazily in onPointerMove once a real
+    // drag begins.
     drag.current = {
       active: true,
       startX: e.clientX,
       startScroll: el.scrollLeft,
       moved: false,
+      captured: false,
+      pointerId: e.pointerId,
     };
-    el.setPointerCapture(e.pointerId);
   }
   function onPointerMove(e: React.PointerEvent) {
     const el = scrollRef.current;
     if (!el || !drag.current.active) return;
     const dx = e.clientX - drag.current.startX;
-    if (Math.abs(dx) > 4) drag.current.moved = true;
-    el.scrollLeft = drag.current.startScroll - dx;
+    if (Math.abs(dx) > 4) {
+      drag.current.moved = true;
+      // Now that we know it's a drag (not a click), capture the pointer so the
+      // scroll keeps tracking even if the cursor leaves the strip.
+      if (!drag.current.captured) {
+        el.setPointerCapture(e.pointerId);
+        drag.current.captured = true;
+      }
+      el.scrollLeft = drag.current.startScroll - dx;
+    }
   }
   function onPointerUp(e: React.PointerEvent) {
     if (!drag.current.active) return;
     drag.current.active = false;
-    scrollRef.current?.releasePointerCapture(e.pointerId);
+    if (drag.current.captured) {
+      scrollRef.current?.releasePointerCapture(e.pointerId);
+      drag.current.captured = false;
+    }
   }
 
   return (
-    <div className="relative mt-2">
+    <div className="mt-2 flex items-center gap-1">
       <button
         type="button"
         onClick={() => nudge(-1)}
@@ -301,24 +326,11 @@ function FilterStrip({
         aria-hidden={!canLeft}
         aria-label="Scroll filters left"
         className={
-          "absolute left-0 top-1/2 z-10 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full border border-white/70 bg-white/70 text-ink/70 shadow-sm backdrop-blur transition hover:bg-white/90 hover:text-ink focus-ring " +
+          "grid h-8 w-8 flex-none place-items-center rounded-full border border-white/70 bg-white/80 text-ink/70 shadow-sm backdrop-blur-md transition hover:bg-white hover:text-ink focus-ring " +
           (canLeft ? "opacity-100" : "pointer-events-none opacity-0")
         }
       >
         <ChevronLeft size={16} />
-      </button>
-      <button
-        type="button"
-        onClick={() => nudge(1)}
-        tabIndex={-1}
-        aria-hidden={!canRight}
-        aria-label="Scroll filters right"
-        className={
-          "absolute right-0 top-1/2 z-10 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full border border-white/70 bg-white/70 text-ink/70 shadow-sm backdrop-blur transition hover:bg-white/90 hover:text-ink focus-ring " +
-          (canRight ? "opacity-100" : "pointer-events-none opacity-0")
-        }
-      >
-        <ChevronRight size={16} />
       </button>
 
       <div
@@ -327,9 +339,9 @@ function FilterStrip({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        className="flex items-center gap-1.5 overflow-x-auto px-1 pb-1 no-scrollbar cursor-grab select-none active:cursor-grabbing"
+        className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-1 pb-1 no-scrollbar cursor-grab select-none active:cursor-grabbing"
       >
-        <span className="pill shrink-0 border border-white/60 bg-white/45 text-ink-muted backdrop-blur">
+        <span className="pill shrink-0 border border-white/70 bg-white/75 text-ink-muted shadow-sm backdrop-blur-md">
           <Filter size={13} />
           <span className="text-[11px]">Filter</span>
         </span>
@@ -346,7 +358,7 @@ function FilterStrip({
                 "pill shrink-0 focus-ring border transition " +
                 (active
                   ? "border-ink bg-ink text-white shadow-sm"
-                  : "border-white/70 bg-white/55 text-ink/85 backdrop-blur hover:bg-white/80")
+                  : "border-white/70 bg-white/80 text-ink/85 shadow-sm backdrop-blur-md hover:bg-white")
               }
             >
               {c.label}
@@ -354,6 +366,20 @@ function FilterStrip({
           );
         })}
       </div>
+
+      <button
+        type="button"
+        onClick={() => nudge(1)}
+        tabIndex={-1}
+        aria-hidden={!canRight}
+        aria-label="Scroll filters right"
+        className={
+          "grid h-8 w-8 flex-none place-items-center rounded-full border border-white/70 bg-white/80 text-ink/70 shadow-sm backdrop-blur-md transition hover:bg-white hover:text-ink focus-ring " +
+          (canRight ? "opacity-100" : "pointer-events-none opacity-0")
+        }
+      >
+        <ChevronRight size={16} />
+      </button>
     </div>
   );
 }

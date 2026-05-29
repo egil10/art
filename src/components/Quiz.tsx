@@ -48,7 +48,17 @@ import {
   getReports,
   reportPainting,
 } from "@/lib/reports";
+import {
+  applyResult,
+  defaultElo,
+  difficultyFromRank,
+  loadElo,
+  saveElo,
+  clearElo,
+  type EloState,
+} from "@/lib/elo";
 import { ReportsModal } from "./ReportsModal";
+import { EloBadge } from "./EloBadge";
 
 type Phase = "idle" | "answered";
 type AutoMode = "off" | "fast" | "slow" | "slower";
@@ -411,6 +421,14 @@ export function Quiz({
     [paintings, category, mode],
   );
   const artistFreq = useMemo(() => buildArtistFreq(pool), [pool]);
+  // Fame rank by painting id — the dataset ships sorted by fame, so a
+  // painting's index in the full list is its obscurity (0 = most famous).
+  // This drives each round's Elo opponent rating.
+  const rankByID = useMemo(() => {
+    const m = new Map<string, number>();
+    paintings.forEach((p, i) => m.set(p.id, i));
+    return m;
+  }, [paintings]);
   const [state, dispatch] = useReducer(
     reducer,
     null,
@@ -424,6 +442,14 @@ export function Quiz({
   const [reportsOpen, setReportsOpen] = useState(false);
   const [autoMode, setAutoMode] = useState<AutoMode>("slow");
   const [review, setReview] = useState(false);
+  // Persisted per-device Elo rating. Starts at the default for SSR, then
+  // hydrates from localStorage after mount. `eloDelta` is the last change,
+  // flashed in the badge then cleared.
+  const [elo, setElo] = useState<EloState>(defaultElo);
+  const [eloDelta, setEloDelta] = useState<number | null>(null);
+  // Guards each answered round so it's scored exactly once.
+  const scoredRef = useRef<string | null>(null);
+  const eloFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The milestone streak currently being celebrated (10, 20, …) or null.
   const [celebrate, setCelebrate] = useState<number | null>(null);
   const celebrateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -435,6 +461,31 @@ export function Quiz({
     const v = localStorage.getItem(AUTO_KEY);
     if (v && (AUTO_ORDER as string[]).includes(v)) setAutoMode(v as AutoMode);
     setReview(localStorage.getItem(REVIEW_KEY) === "1");
+    setElo(loadElo());
+  }, []);
+
+  // Score each answered round once: the player vs the painting's obscurity.
+  useEffect(() => {
+    if (state.phase !== "answered" || !state.current) return;
+    const key = `${state.current.painting.id}:${state.total}`;
+    if (scoredRef.current === key) return;
+    scoredRef.current = key;
+    const total = rankByID.size;
+    const rank = rankByID.get(state.current.painting.id) ?? total;
+    const opponent = difficultyFromRank(rank, total);
+    const won = state.picked === state.current.target;
+    const next = applyResult(elo, opponent, won);
+    setElo(next);
+    saveElo(next);
+    setEloDelta(next.rating - elo.rating);
+    if (eloFlashTimer.current) clearTimeout(eloFlashTimer.current);
+    eloFlashTimer.current = setTimeout(() => setEloDelta(null), 1600);
+  }, [state.phase, state.total, state.current, state.picked, elo, rankByID]);
+
+  const resetElo = useCallback(() => {
+    clearElo();
+    setElo(defaultElo());
+    setEloDelta(null);
   }, []);
 
   const reviewRef = useRef(review);
@@ -659,6 +710,7 @@ export function Quiz({
         </div>
 
         <div className="flex items-center gap-1.5">
+          <EloBadge state={elo} delta={eloDelta} onReset={resetElo} />
           <Stat label="Score" value={state.score} />
           <Stat label="Streak" value={state.streak} accent={state.streak >= 3} />
           <Stat label="Acc" value={`${accuracy}%`} subtle />
