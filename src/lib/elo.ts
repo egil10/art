@@ -7,8 +7,8 @@
 
 const KEY = "canvas.elo.v1";
 
-/** Everyone starts here — a conventional, neutral Elo baseline. */
-export const DEFAULT_RATING = 1200;
+/** Everyone starts here — a gentle baseline that climbs as you play. */
+export const DEFAULT_RATING = 800;
 /** Rating can't crater below this, so a rough patch stays recoverable. */
 const FLOOR = 100;
 /** How many recent ratings we keep for the sparkline (bounds storage). */

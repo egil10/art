@@ -644,10 +644,13 @@ export function Quiz({
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 pb-12 pt-3 sm:pt-6">
+      {/* On wide screens the wordmark floats out into the left gutter as its
+          own mark; below xl (no gutter) it sits inline at the head of the bar. */}
+      <Wordmark className="fixed left-6 top-5 z-50 hidden xl:block" />
       {/* Top status bar */}
       <div className="flex items-center justify-between gap-2 pb-3">
         <div className="flex items-center gap-1.5">
-          <Wordmark className="mr-1 hidden sm:inline-flex" />
+          <Wordmark className="mr-1 hidden sm:inline-flex xl:hidden" />
           <button
             onClick={onChangeCategory}
             className="pill-glass focus-ring"
@@ -713,8 +716,12 @@ export function Quiz({
 
         <div className="flex items-center gap-1.5">
           <EloBadge state={elo} delta={eloDelta} onReset={resetElo} />
-          <Stat label="Score" value={state.score} />
-          <Stat label="Streak" value={state.streak} accent={state.streak >= 3} />
+          <Stat
+            label="Streak"
+            value={state.streak}
+            sub={state.total}
+            accent={state.streak >= 3}
+          />
           <Stat label="Acc" value={`${accuracy}%`} subtle />
           <button
             onClick={() => {
@@ -1090,11 +1097,14 @@ function Row({ label, value }: { label: string; value: string }) {
 function Stat({
   label,
   value,
+  sub,
   accent,
   subtle,
 }: {
   label: string;
   value: number | string;
+  /** Optional secondary number rendered muted after a slash (e.g. streak/total). */
+  sub?: number | string;
   accent?: boolean;
   subtle?: boolean;
 }) {
@@ -1111,7 +1121,12 @@ function Stat({
     >
       {accent && <Sparkles size={12} />}
       <span className="text-ink-muted">{label}</span>
-      <span className="font-semibold tabular-nums text-ink">{value}</span>
+      <span className="font-semibold tabular-nums text-ink">
+        {value}
+        {sub !== undefined && (
+          <span className="font-normal text-ink-muted">/{sub}</span>
+        )}
+      </span>
     </div>
   );
 }
