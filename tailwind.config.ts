@@ -14,6 +14,7 @@ const config: Config = {
           "Segoe UI",
           "sans-serif",
         ],
+        display: ["var(--font-display)", "ui-sans-serif", "sans-serif"],
       },
       colors: {
         ink: {

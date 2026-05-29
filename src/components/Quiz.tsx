@@ -59,6 +59,7 @@ import {
 } from "@/lib/elo";
 import { ReportsModal } from "./ReportsModal";
 import { EloBadge } from "./EloBadge";
+import { Wordmark } from "./Wordmark";
 
 type Phase = "idle" | "answered";
 type AutoMode = "off" | "fast" | "slow" | "slower";
@@ -646,6 +647,7 @@ export function Quiz({
       {/* Top status bar */}
       <div className="flex items-center justify-between gap-2 pb-3">
         <div className="flex items-center gap-1.5">
+          <Wordmark className="mr-1 hidden sm:inline-flex" />
           <button
             onClick={onChangeCategory}
             className="pill-glass focus-ring"

@@ -24,6 +24,7 @@ import {
 } from "@/lib/paintings";
 import { usePaintings } from "@/lib/usePaintings";
 import { reportPainting } from "@/lib/reports";
+import { Wordmark } from "@/components/Wordmark";
 
 const PAGE = 90; // paintings per "page" — infinite scroll
 
@@ -86,7 +87,8 @@ export default function GalleryPage() {
             the gallery as it scrolls underneath. */}
         <div className="mx-auto max-w-6xl px-4 py-2.5">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
+                <Wordmark />
                 <Link
                   href="/"
                   className="pill-glass focus-ring"
