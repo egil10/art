@@ -462,7 +462,6 @@ export function Quiz({
   const [eloDelta, setEloDelta] = useState<number | null>(null);
   // Guards each answered round so it's scored exactly once.
   const scoredRef = useRef<string | null>(null);
-  const eloFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The milestone streak currently being celebrated (10, 20, …) or null.
   const [celebrate, setCelebrate] = useState<number | null>(null);
   const celebrateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -491,9 +490,13 @@ export function Quiz({
     setElo(next);
     saveElo(next);
     setEloDelta(next.rating - elo.rating);
-    if (eloFlashTimer.current) clearTimeout(eloFlashTimer.current);
-    eloFlashTimer.current = setTimeout(() => setEloDelta(null), 1600);
   }, [state.phase, state.total, state.current, state.picked, elo, rankByID]);
+
+  // The rating change is shown in the reveal card; clear it once the reveal
+  // is dismissed so the next round starts clean.
+  useEffect(() => {
+    if (state.phase === "idle") setEloDelta(null);
+  }, [state.phase]);
 
   const resetElo = useCallback(() => {
     clearElo();
@@ -665,10 +668,12 @@ export function Quiz({
           own mark; below xl (no gutter) it sits inline at the head of the bar. */}
       <Wordmark className="fixed left-6 top-5 z-50 hidden xl:block" />
       {/* Top status bar */}
-      <div className="flex items-center justify-between gap-2 pb-3">
-        {/* On phones the controls scroll horizontally rather than squishing —
-            keeps every pill full-size and readable. They all fit on sm+. */}
-        <div className="-my-1 flex min-w-0 items-center gap-1.5 overflow-x-auto py-1 no-scrollbar">
+      {/* The header mirrors the cards below: the controls span the painting
+          card's width (flex-1) and the stats span the feedback panel's width
+          (300px), sharing the same gap so the two rows line up. On phones the
+          controls scroll horizontally rather than squishing. */}
+      <div className="flex items-center gap-3 pb-3">
+        <div className="-my-1 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-1 no-scrollbar">
           <Wordmark className="mr-1 hidden sm:inline-flex xl:hidden" />
           <button
             onClick={onChangeCategory}
@@ -737,8 +742,8 @@ export function Quiz({
           </button>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
-          <EloBadge state={elo} delta={eloDelta} onReset={resetElo} />
+        <div className="flex shrink-0 items-center gap-1.5 md:w-[300px] md:justify-between">
+          <EloBadge state={elo} onReset={resetElo} />
           <Stat
             label="Streak"
             value={state.streak}
@@ -824,6 +829,7 @@ export function Quiz({
                     target={current.target}
                     mode={mode}
                     correct={correct}
+                    delta={eloDelta}
                     onNext={handleNext}
                   />
                 </div>
@@ -850,6 +856,7 @@ export function Quiz({
                 target={current.target}
                 mode={mode}
                 correct={correct}
+                delta={eloDelta}
                 onNext={handleNext}
               />
             ) : (
@@ -947,12 +954,14 @@ function CompactReveal({
   target,
   mode,
   correct,
+  delta,
   onNext,
 }: {
   painting: Painting;
   target: string;
   mode: GameMode;
   correct: boolean;
+  delta: number | null;
   onNext: () => void;
 }) {
   const showTitle = mode !== "title";
@@ -969,6 +978,11 @@ function CompactReveal({
           }
         >
           {correct ? "Correct" : "Not quite"}
+          {delta !== null && delta !== 0 && (
+            <span className="ml-1 tabular-nums">
+              {delta > 0 ? `+${delta}` : delta}
+            </span>
+          )}
         </div>
         <div className="truncate text-[14px] font-bold text-ink">{target}</div>
         <div className="truncate text-[11px] text-ink-muted">
@@ -992,12 +1006,14 @@ function SideReveal({
   target,
   mode,
   correct,
+  delta,
   onNext,
 }: {
   painting: Painting;
   target: string;
   mode: GameMode;
   correct: boolean;
+  delta: number | null;
   onNext: () => void;
 }) {
   // What's NOT already shown as the headline answer — render the painting's
@@ -1022,6 +1038,11 @@ function SideReveal({
       >
         {correct ? <Check size={12} /> : <X size={12} />}
         {correct ? "Correct" : "Not quite"}
+        {delta !== null && delta !== 0 && (
+          <span className="ml-1 tabular-nums">
+            {delta > 0 ? `+${delta}` : delta}
+          </span>
+        )}
       </div>
 
       {/* The answer — biggest element so it's the thing the player reads. */}

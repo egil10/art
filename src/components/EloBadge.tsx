@@ -78,8 +78,15 @@ function RatingChart({ history, games }: { history: number[]; games: number }) {
   const rising = last >= history[0];
   const stroke = rising ? "#16a34a" : "#dc2626";
 
-  // Question-axis ticks: first / middle / last.
-  const xIdx = n <= 2 ? [0, n - 1] : [0, Math.floor((n - 1) / 2), n - 1];
+  // Question-axis ticks at round numbers only — every 10, or every 100 once
+  // there's a long history — so labels stay clean instead of arbitrary counts.
+  const xStep = games - firstGame > 80 ? 100 : 10;
+  const xForGame = (g: number) =>
+    ML + (n === 1 ? 0 : ((g - firstGame) / (n - 1)) * plotW);
+  const xTicks: number[] = [];
+  for (let g = Math.ceil(firstGame / xStep) * xStep; g <= games; g += xStep) {
+    xTicks.push(g);
+  }
 
   return (
     <svg
@@ -110,18 +117,23 @@ function RatingChart({ history, games }: { history: number[]; games: number }) {
           </text>
         </g>
       ))}
-      {xIdx.map((i) => (
-        <text
-          key={i}
-          x={x(i)}
-          y={H - 4}
-          textAnchor={i === 0 ? "start" : i === n - 1 ? "end" : "middle"}
-          fill="#6b7280"
-          fontSize="9"
-        >
-          {firstGame + i}
-        </text>
-      ))}
+      {xTicks.map((g) => {
+        const gx = xForGame(g);
+        const anchor =
+          gx < ML + 10 ? "start" : gx > W - MR - 10 ? "end" : "middle";
+        return (
+          <text
+            key={g}
+            x={gx}
+            y={H - 4}
+            textAnchor={anchor}
+            fill="#6b7280"
+            fontSize="9"
+          >
+            {g}
+          </text>
+        );
+      })}
       <polyline
         points={pts}
         fill="none"
@@ -148,12 +160,9 @@ function PanelStat({ label, value }: { label: string; value: string }) {
 
 export function EloBadge({
   state,
-  delta,
   onReset,
 }: {
   state: EloState;
-  /** Most recent rating change, flashed beside the badge then cleared. */
-  delta: number | null;
   onReset: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -183,17 +192,6 @@ export function EloBadge({
         <StatusIcon size={13} className={status.cls} strokeWidth={2.2} />
         <span className="text-ink-muted">Elo</span>
         <span className="font-semibold tabular-nums text-ink">{state.rating}</span>
-        {delta !== null && delta !== 0 && (
-          <span
-            key={state.games}
-            className={
-              "animate-fade-up font-semibold tabular-nums " +
-              (delta > 0 ? "text-green-600" : "text-red-600")
-            }
-          >
-            {delta > 0 ? `+${delta}` : delta}
-          </span>
-        )}
       </button>
 
       {open && (
