@@ -26,6 +26,11 @@ import {
   Repeat,
   RotateCcw,
   Award,
+  Flame,
+  Star,
+  Trophy,
+  Gem,
+  Crown,
   Feather,
   Image as ImageIcon,
 } from "lucide-react";
@@ -1261,10 +1266,148 @@ function Kbd({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Escalating celebration tiers. Each milestone (multiple of STREAK_GOAL)
+    earns a richer icon, colour, confetti burst and copy than the last, with
+    a one-off "century" screen at 100. The `dot` colour also tints the live
+    progress dots so the run visibly deepens as you climb. */
+type StreakTier = {
+  eyebrow: string;
+  blurb: string;
+  Icon: typeof Award;
+  /** icon-badge colour classes (bg + text + ring colour; `ring-4` is added). */
+  badge: string;
+  /** filled progress-dot colour for the lap that earns this tier. */
+  dot: string;
+  /** confetti piece count + palette — denser & wilder as tiers climb. */
+  confetti: number;
+  colors: string[];
+  /** optional radial glow behind the card (rgba), for the high tiers. */
+  glow?: string;
+  /** century-only: larger, max-intensity layout. */
+  big?: boolean;
+};
+
+const STREAK_TIERS: StreakTier[] = [
+  {
+    eyebrow: "Perfect run",
+    blurb: "A clean ten. The streak begins.",
+    Icon: Award,
+    badge: "bg-amber-100 text-amber-700 ring-amber-200/60",
+    dot: "bg-green-500",
+    confetti: 28,
+    colors: ["#16a34a", "#f59e0b", "#3b82f6", "#ec4899", "#0a0a0a"],
+  },
+  {
+    eyebrow: "On fire",
+    blurb: "Twenty straight — no missteps.",
+    Icon: Flame,
+    badge: "bg-orange-100 text-orange-600 ring-orange-200/60",
+    dot: "bg-emerald-500",
+    confetti: 46,
+    colors: ["#10b981", "#f97316", "#f59e0b", "#3b82f6", "#0a0a0a"],
+    glow: "rgba(249,115,22,0.34)",
+  },
+  {
+    eyebrow: "Brilliant",
+    blurb: "Thirty in a row. Real connoisseur stuff.",
+    Icon: Sparkles,
+    badge: "bg-teal-100 text-teal-600 ring-teal-200/60",
+    dot: "bg-teal-500",
+    confetti: 62,
+    colors: ["#14b8a6", "#f59e0b", "#ec4899", "#3b82f6", "#0a0a0a"],
+    glow: "rgba(20,184,166,0.36)",
+  },
+  {
+    eyebrow: "Unstoppable",
+    blurb: "Forty. The misses can't catch you.",
+    Icon: Zap,
+    badge: "bg-cyan-100 text-cyan-600 ring-cyan-200/60",
+    dot: "bg-cyan-500",
+    confetti: 80,
+    colors: ["#06b6d4", "#f59e0b", "#a855f7", "#22c55e", "#0a0a0a"],
+    glow: "rgba(6,182,212,0.4)",
+  },
+  {
+    eyebrow: "Halfway to legend",
+    blurb: "Fifty correct without a slip.",
+    Icon: Star,
+    badge: "bg-sky-100 text-sky-600 ring-sky-200/60",
+    dot: "bg-sky-500",
+    confetti: 100,
+    colors: ["#0ea5e9", "#f59e0b", "#a855f7", "#ec4899", "#22c55e"],
+    glow: "rgba(14,165,233,0.42)",
+  },
+  {
+    eyebrow: "Phenomenal",
+    blurb: "Sixty in a row. This is rare air.",
+    Icon: Star,
+    badge: "bg-indigo-100 text-indigo-600 ring-indigo-200/60",
+    dot: "bg-indigo-500",
+    confetti: 118,
+    colors: ["#6366f1", "#f59e0b", "#ec4899", "#06b6d4", "#22c55e"],
+    glow: "rgba(99,102,241,0.42)",
+  },
+  {
+    eyebrow: "Virtuoso",
+    blurb: "Seventy. The gallery bows.",
+    Icon: Trophy,
+    badge: "bg-violet-100 text-violet-600 ring-violet-200/60",
+    dot: "bg-violet-500",
+    confetti: 136,
+    colors: ["#8b5cf6", "#f59e0b", "#ec4899", "#06b6d4", "#f97316"],
+    glow: "rgba(139,92,246,0.44)",
+  },
+  {
+    eyebrow: "Grandmaster",
+    blurb: "Eighty straight. Almost unheard of.",
+    Icon: Trophy,
+    badge: "bg-fuchsia-100 text-fuchsia-600 ring-fuchsia-200/60",
+    dot: "bg-fuchsia-500",
+    confetti: 154,
+    colors: ["#d946ef", "#f59e0b", "#3b82f6", "#22c55e", "#f97316"],
+    glow: "rgba(217,70,239,0.46)",
+  },
+  {
+    eyebrow: "Almost immortal",
+    blurb: "Ninety. One more lap to the century.",
+    Icon: Gem,
+    badge: "bg-rose-100 text-rose-600 ring-rose-200/60",
+    dot: "bg-rose-500",
+    confetti: 172,
+    colors: ["#f43f5e", "#f59e0b", "#a855f7", "#06b6d4", "#22c55e"],
+    glow: "rgba(244,63,94,0.48)",
+  },
+];
+
+const CENTURY_TIER: StreakTier = {
+  eyebrow: "Immortal",
+  blurb: "One hundred in a row. A perfect century.",
+  Icon: Crown,
+  badge: "bg-amber-200 text-amber-800 ring-amber-300/70",
+  dot: "bg-amber-400",
+  confetti: 220,
+  colors: ["#f59e0b", "#fbbf24", "#fde68a", "#ec4899", "#22c55e", "#3b82f6", "#a855f7"],
+  glow: "rgba(245,158,11,0.55)",
+  big: true,
+};
+
+/** Tier earned by reaching `milestone` (10, 20, …). 100+ is the century. */
+function streakTier(milestone: number): StreakTier {
+  if (milestone >= 100) return CENTURY_TIER;
+  const lap = Math.max(1, Math.floor(milestone / STREAK_GOAL)); // 10→1 … 90→9
+  return STREAK_TIERS[Math.min(lap, STREAK_TIERS.length) - 1];
+}
+
+const CONFETTI_COLORS = STREAK_TIERS[0].colors;
+
 function StreakDots({ streak }: { streak: number }) {
   // Dots count toward the next goal: 1–10 fill, 10 fills all, 11 wraps to 1.
   const filled = streak === 0 ? 0 : ((streak - 1) % STREAK_GOAL) + 1;
   const perfect = filled === STREAK_GOAL;
+  // Colour the dots for the milestone this lap is chasing, so each new lap
+  // visibly shifts hue (green → teal → … → gold).
+  const pursuing = (Math.floor(Math.max(streak - 1, 0) / STREAK_GOAL) + 1) * STREAK_GOAL;
+  const dotColor = streakTier(pursuing).dot;
   return (
     <div
       className="inline-flex items-center gap-1.5"
@@ -1279,7 +1422,7 @@ function StreakDots({ streak }: { streak: number }) {
             className={
               "h-1.5 w-1.5 rounded-full transition-all duration-300 " +
               (on
-                ? (perfect ? "bg-amber-400 " : "bg-green-500 ") + "scale-110"
+                ? (perfect ? "bg-amber-400 " : dotColor + " ") + "scale-110"
                 : "bg-black/15")
             }
           />
@@ -1289,20 +1432,24 @@ function StreakDots({ streak }: { streak: number }) {
   );
 }
 
-const CONFETTI_COLORS = ["#16a34a", "#f59e0b", "#3b82f6", "#ec4899", "#0a0a0a"];
-
-function Confetti() {
+function Confetti({
+  count = 28,
+  colors = CONFETTI_COLORS,
+}: {
+  count?: number;
+  colors?: string[];
+}) {
   const pieces = useMemo(
     () =>
-      Array.from({ length: 28 }, () => ({
+      Array.from({ length: count }, () => ({
         left: Math.random() * 100,
         delay: Math.random() * 0.4,
         dur: 1.8 + Math.random() * 1.4,
-        color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+        color: colors[Math.floor(Math.random() * colors.length)],
         w: 5 + Math.random() * 6,
         h: 8 + Math.random() * 8,
       })),
-    [],
+    [count, colors],
   );
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 overflow-hidden">
@@ -1334,6 +1481,8 @@ function StreakDiploma({
   mode: GameMode;
   onClose: () => void;
 }) {
+  const tier = streakTier(milestone);
+  const { Icon } = tier;
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -1343,24 +1492,47 @@ function StreakDiploma({
       aria-label={`${milestone} in a row`}
     >
       <div className="frost-backdrop absolute inset-0 animate-fade-in" />
-      <Confetti />
+      <Confetti count={tier.confetti} colors={tier.colors} />
+      {tier.glow && (
+        <div
+          aria-hidden
+          className="animate-streak-glow pointer-events-none absolute left-1/2 top-1/2 h-[460px] w-[460px] rounded-full"
+          style={{ background: `radial-gradient(circle, ${tier.glow}, transparent 70%)` }}
+        />
+      )}
       <div
         onClick={(e) => e.stopPropagation()}
-        className="frost animate-diploma relative w-full max-w-xs rounded-[28px] p-7 text-center"
+        className={
+          "frost animate-diploma relative w-full rounded-[28px] p-7 text-center " +
+          (tier.big ? "max-w-sm" : "max-w-xs")
+        }
       >
         <div className="pointer-events-none absolute inset-2 rounded-[22px] border border-black/[0.08]" />
-        <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-amber-100 text-amber-700 ring-4 ring-amber-200/60">
-          <Award size={28} strokeWidth={2} />
+        <div
+          className={
+            "mx-auto grid place-items-center rounded-full ring-4 " +
+            (tier.big ? "h-16 w-16 " : "h-14 w-14 ") +
+            tier.badge
+          }
+        >
+          <Icon size={tier.big ? 32 : 28} strokeWidth={2} />
         </div>
         <div className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted">
-          Perfect run
+          {tier.eyebrow}
         </div>
-        <h2 className="mt-1 text-2xl font-bold leading-tight text-ink">
+        <h2
+          className={
+            "mt-1 font-bold leading-tight text-ink " +
+            (tier.big ? "text-3xl" : "text-2xl")
+          }
+        >
           {milestone} in a row!
         </h2>
         <p className="mt-2 text-[12.5px] leading-snug text-ink/70">
-          {milestone} correct in a row · {modeMeta(mode).label} ·{" "}
-          {categoryLabel(category)}
+          {tier.blurb}
+        </p>
+        <p className="mt-1 text-[11px] text-ink-muted">
+          {modeMeta(mode).label} · {categoryLabel(category)}
         </p>
         <button onClick={onClose} className="pill-solid focus-ring mx-auto mt-5">
           Keep going

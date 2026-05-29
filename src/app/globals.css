@@ -164,8 +164,29 @@ button {
 .animate-diploma {
   animation: diplomaPop 440ms cubic-bezier(0.2, 0.8, 0.3, 1.1) both;
 }
+/* Soft pulsing halo behind the higher-tier celebration cards. The -50%
+   offsets keep it centred (it replaces the element's own translate). */
+@keyframes streakGlow {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: translate(-50%, -50%) scale(0.92);
+  }
+  50% {
+    opacity: 0.9;
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+}
+.animate-streak-glow {
+  animation: streakGlow 2.4s ease-in-out infinite;
+}
 @media (prefers-reduced-motion: reduce) {
   .animate-diploma {
     animation: none;
+  }
+  .animate-streak-glow {
+    animation: none;
+    opacity: 0.7;
+    transform: translate(-50%, -50%);
   }
 }
