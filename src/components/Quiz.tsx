@@ -404,6 +404,16 @@ function reducer(state: State, action: Action): State {
   }
 }
 
+// Step the label font down as it gets longer so the fixed-width Category/Mode
+// pills stay one size whatever's selected — the header never reflows when you
+// toggle. Truncation is the final safety net for the longest names.
+function fitLabel(label: string): string {
+  const n = label.length;
+  if (n > 13) return "text-[11px]";
+  if (n > 10) return "text-[12px]";
+  return "text-sm";
+}
+
 export function Quiz({
   paintings,
   category,
@@ -649,28 +659,32 @@ export function Quiz({
       <Wordmark className="fixed left-6 top-5 z-50 hidden xl:block" />
       {/* Top status bar */}
       <div className="flex items-center justify-between gap-2 pb-3">
-        <div className="flex items-center gap-1.5">
+        <div className="flex min-w-0 items-center gap-1.5">
           <Wordmark className="mr-1 hidden sm:inline-flex xl:hidden" />
           <button
             onClick={onChangeCategory}
-            className="pill-glass focus-ring"
+            className="pill-glass focus-ring min-w-0 shrink-0 justify-center md:w-40"
             aria-label="Change category"
           >
-            <Layers size={15} strokeWidth={2} />
-            <span>{categoryLabel(category)}</span>
+            <Layers size={15} strokeWidth={2} className="shrink-0" />
+            <span className={"truncate " + fitLabel(categoryLabel(category))}>
+              {categoryLabel(category)}
+            </span>
           </button>
           <button
             onClick={onChangeMode}
-            className="pill-glass focus-ring"
+            className="pill-glass focus-ring min-w-0 shrink-0 justify-center md:w-32"
             aria-label="Change game mode"
             title="Change what you're guessing"
           >
-            <Gamepad2 size={15} strokeWidth={2} />
-            <span>{modeMeta(mode).label}</span>
+            <Gamepad2 size={15} strokeWidth={2} className="shrink-0" />
+            <span className={"truncate " + fitLabel(modeMeta(mode).label)}>
+              {modeMeta(mode).label}
+            </span>
           </button>
           <Link
             href="/gallery"
-            className="pill-glass focus-ring"
+            className="pill-glass focus-ring shrink-0"
             aria-label="Open gallery"
           >
             <Images size={15} strokeWidth={2} />
@@ -678,7 +692,7 @@ export function Quiz({
           </Link>
           <button
             onClick={cycleAutoMode}
-            className="pill-glass focus-ring"
+            className="pill-glass focus-ring shrink-0"
             aria-label={`Auto-advance: ${AUTO_LABELS[autoMode]} — tap to cycle`}
             title="Cycle auto-advance speed"
           >
@@ -696,7 +710,7 @@ export function Quiz({
           <button
             onClick={toggleReview}
             className={
-              "pill focus-ring border " +
+              "pill focus-ring border shrink-0 " +
               (review
                 ? "border-ink/15 bg-ink text-white"
                 : "border-white/70 bg-white/55 text-ink/80 backdrop-blur hover:bg-white/80")
@@ -714,7 +728,7 @@ export function Quiz({
           </button>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           <EloBadge state={elo} delta={eloDelta} onReset={resetElo} />
           <Stat
             label="Streak"
@@ -729,7 +743,7 @@ export function Quiz({
               else handleReport();
             }}
             className={
-              "relative grid h-8 w-8 place-items-center rounded-full border focus-ring transition " +
+              "relative grid h-8 w-8 shrink-0 place-items-center rounded-full border focus-ring transition " +
               (reported
                 ? "border-ink/15 bg-ink text-white"
                 : "border-white/70 bg-white/55 text-ink/70 backdrop-blur hover:bg-white/85 hover:text-ink")
@@ -1111,7 +1125,7 @@ function Stat({
   return (
     <div
       className={
-        "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs " +
+        "flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs " +
         (accent
           ? "bg-amber-100/80 text-amber-900 backdrop-blur"
           : subtle

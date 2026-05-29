@@ -1,42 +1,127 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { TrendingUp, TrendingDown, Trophy, X, RotateCcw } from "lucide-react";
+import {
+  TrendingUp,
+  TrendingDown,
+  Trophy,
+  Anchor,
+  Minus,
+  X,
+  RotateCcw,
+  type LucideIcon,
+} from "lucide-react";
 import {
   accuracy,
   recentTrend,
+  eloStatus,
   type EloState,
+  type EloStatus,
 } from "@/lib/elo";
 
-/** A small inline sparkline of the rating history. */
-function Sparkline({ history }: { history: number[] }) {
-  const W = 280;
-  const H = 70;
-  const PAD = 4;
+// Drives the badge icon: all-time high/low, else the short-term trend.
+// Clean lucide marks only — TrendingUp/Down read as the "stock up/down" cue.
+const STATUS: Record<
+  EloStatus,
+  { Icon: LucideIcon; cls: string; label: string }
+> = {
+  high: { Icon: Trophy, cls: "text-amber-500", label: "all-time high" },
+  low: { Icon: Anchor, cls: "text-sky-600", label: "all-time low" },
+  up: { Icon: TrendingUp, cls: "text-green-600", label: "trending up" },
+  down: { Icon: TrendingDown, cls: "text-red-600", label: "trending down" },
+  flat: { Icon: Minus, cls: "text-ink-muted", label: "steady" },
+};
+
+// A "nice" round gridline step (1/2/2.5/5 ×10ⁿ) aiming for ~4 lines.
+function niceStep(range: number): number {
+  if (range <= 0) return 100;
+  const raw = range / 4;
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  return ([1, 2, 2.5, 5, 10].map((m) => m * pow).find((c) => c >= raw) ??
+    10 * pow);
+}
+
+/** The rating history as a line chart with a rating (y) and question (x) axis. */
+function RatingChart({ history, games }: { history: number[]; games: number }) {
+  const W = 300;
+  const H = 132;
+  const ML = 36; // left gutter for rating labels
+  const MR = 8;
+  const MT = 8;
+  const MB = 18; // bottom gutter for question labels
+  const plotW = W - ML - MR;
+  const plotH = H - MT - MB;
+
   if (history.length < 2) {
     return (
-      <div className="grid h-[70px] place-items-center text-[11px] text-ink-muted">
+      <div className="grid h-[132px] place-items-center text-[11px] text-ink-muted">
         Play a few rounds to chart your rating.
       </div>
     );
   }
-  const min = Math.min(...history);
-  const max = Math.max(...history);
-  const span = Math.max(1, max - min);
+
+  const dataMin = Math.min(...history);
+  const dataMax = Math.max(...history);
+  const step = niceStep(dataMax - dataMin);
+  const yMin = Math.floor(dataMin / step) * step;
+  let yMax = Math.ceil(dataMax / step) * step;
+  if (yMax === yMin) yMax = yMin + step;
+  const yTicks: number[] = [];
+  for (let v = yMin; v <= yMax + 0.5; v += step) yTicks.push(v);
+
   const n = history.length;
-  const x = (i: number) => PAD + (i / (n - 1)) * (W - PAD * 2);
-  const y = (v: number) => PAD + (1 - (v - min) / span) * (H - PAD * 2);
+  const firstGame = Math.max(1, games - n + 1); // question # of history[0]
+  const x = (i: number) => ML + (n === 1 ? 0 : (i / (n - 1)) * plotW);
+  const y = (v: number) => MT + (1 - (v - yMin) / (yMax - yMin)) * plotH;
   const pts = history.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
   const last = history[n - 1];
   const rising = last >= history[0];
   const stroke = rising ? "#16a34a" : "#dc2626";
+
+  // Question-axis ticks: first / middle / last.
+  const xIdx = n <= 2 ? [0, n - 1] : [0, Math.floor((n - 1) / 2), n - 1];
+
   return (
     <svg
       viewBox={`0 0 ${W} ${H}`}
       className="w-full"
       role="img"
-      aria-label="Rating over time"
+      aria-label="Rating over questions played"
     >
+      {yTicks.map((v) => (
+        <g key={v}>
+          <line
+            x1={ML}
+            x2={W - MR}
+            y1={y(v)}
+            y2={y(v)}
+            stroke="rgba(10,10,10,0.07)"
+            strokeWidth={1}
+          />
+          <text
+            x={ML - 6}
+            y={y(v)}
+            textAnchor="end"
+            dominantBaseline="central"
+            fill="#6b7280"
+            fontSize="9"
+          >
+            {v}
+          </text>
+        </g>
+      ))}
+      {xIdx.map((i) => (
+        <text
+          key={i}
+          x={x(i)}
+          y={H - 4}
+          textAnchor={i === 0 ? "start" : i === n - 1 ? "end" : "middle"}
+          fill="#6b7280"
+          fontSize="9"
+        >
+          {firstGame + i}
+        </text>
+      ))}
       <polyline
         points={pts}
         fill="none"
@@ -84,16 +169,18 @@ export function EloBadge({
   }, [open]);
 
   const trend = recentTrend(state);
+  const status = STATUS[eloStatus(state)];
+  const StatusIcon = status.Icon;
 
   return (
     <>
       <button
         onClick={() => setOpen(true)}
-        className="relative flex items-center gap-1.5 rounded-full border border-white/70 bg-white/55 px-3 py-1.5 text-xs backdrop-blur transition hover:bg-white/85 focus-ring"
-        aria-label={`Your rating ${state.rating} — open history`}
-        title="Your rating — tap for history"
+        className="relative flex shrink-0 items-center gap-1.5 rounded-full border border-white/70 bg-white/55 px-3 py-1.5 text-xs backdrop-blur transition hover:bg-white/85 focus-ring"
+        aria-label={`Your rating ${state.rating}, ${status.label} — open history`}
+        title={`Your rating — ${status.label}. Tap for history`}
       >
-        <Trophy size={13} className="text-amber-500" strokeWidth={2.2} />
+        <StatusIcon size={13} className={status.cls} strokeWidth={2.2} />
         <span className="text-ink-muted">Elo</span>
         <span className="font-semibold tabular-nums text-ink">{state.rating}</span>
         {delta !== null && delta !== 0 && (
@@ -152,7 +239,7 @@ export function EloBadge({
             </div>
 
             <div className="mt-4 rounded-2xl border border-black/[0.06] bg-white/40 p-3">
-              <Sparkline history={state.history} />
+              <RatingChart history={state.history} games={state.games} />
             </div>
 
             <div className="mt-4 grid grid-cols-3 gap-2">

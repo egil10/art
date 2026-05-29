@@ -25,6 +25,8 @@ export type EloState = {
   rating: number;
   /** Highest rating ever reached. */
   peak: number;
+  /** Lowest rating ever reached. */
+  low: number;
   /** Rounds scored. */
   games: number;
   /** Correct answers (for accuracy). */
@@ -39,6 +41,7 @@ export function defaultElo(): EloState {
   return {
     rating: DEFAULT_RATING,
     peak: DEFAULT_RATING,
+    low: DEFAULT_RATING,
     games: 0,
     wins: 0,
     history: [],
@@ -85,6 +88,7 @@ export function applyResult(
   return {
     rating,
     peak: Math.max(state.peak, rating),
+    low: Math.min(state.low, rating),
     games: state.games + 1,
     wins: state.wins + (won ? 1 : 0),
     history,
@@ -104,6 +108,21 @@ export function recentTrend(state: EloState, n = 10): number {
   return h[h.length - 1] - from;
 }
 
+export type EloStatus = "high" | "low" | "up" | "down" | "flat";
+
+/** Classifies the rating for the badge icon: all-time high/low take priority,
+    otherwise the short-term (last ~4 answers) trend. Needs a few games first. */
+export function eloStatus(state: EloState): EloStatus {
+  if (state.games >= 5) {
+    if (state.rating >= state.peak) return "high";
+    if (state.rating <= state.low) return "low";
+  }
+  const t = recentTrend(state, 4);
+  if (t > 0) return "up";
+  if (t < 0) return "down";
+  return "flat";
+}
+
 export function loadElo(): EloState {
   if (typeof window === "undefined") return defaultElo();
   try {
@@ -112,11 +131,14 @@ export function loadElo(): EloState {
     const parsed = JSON.parse(raw) as Partial<EloState>;
     // Merge over defaults so older/partial blobs stay valid.
     const base = defaultElo();
-    return {
-      ...base,
-      ...parsed,
-      history: Array.isArray(parsed.history) ? parsed.history : base.history,
-    };
+    const history = Array.isArray(parsed.history) ? parsed.history : base.history;
+    const merged = { ...base, ...parsed, history };
+    // Reconcile peak/low against the known data so an older blob (or one
+    // missing `low`) can't report a high/low the history contradicts.
+    const seen = [merged.rating, ...history];
+    merged.peak = Math.max(merged.peak, ...seen);
+    merged.low = Math.min(merged.low, ...seen);
+    return merged;
   } catch {
     return defaultElo();
   }
