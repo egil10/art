@@ -35,11 +35,11 @@ import {
   imageUrl,
   heroImageProps,
   modeMeta,
+  painterWikipediaUrl,
   paintingNationality,
   paintingsFor,
   paintingsForMode,
   rng,
-  wikipediaUrl,
   type CategoryKey,
   type GameMode,
   type ImageQuality,
@@ -1154,7 +1154,7 @@ function SideReveal({
       <div className="flex-1" />
       <div className="mt-4 flex items-center justify-between gap-2">
         <a
-          href={wikipediaUrl(painting.id)}
+          href={painterWikipediaUrl(painting.artist)}
           target="_blank"
           rel="noopener noreferrer"
           className="pill-glass focus-ring text-[11px]"

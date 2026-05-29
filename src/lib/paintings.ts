@@ -127,6 +127,15 @@ export function wikipediaUrl(id: string) {
   return `https://www.wikidata.org/wiki/Special:GoToLinkedPage?site=enwiki&itemid=${id}`;
 }
 
+/** Wikipedia link for a painter by name. Many paintings have no English
+    Wikipedia article of their own (so the painting Q-id dead-ends), but the
+    painter almost always does. `go=Go` makes MediaWiki jump straight to the
+    article when the title matches the name, and fall back to search results
+    — never a 404 — when it doesn't. */
+export function painterWikipediaUrl(artist: string) {
+  return `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(artist)}&go=Go`;
+}
+
 export function paintingsFor(all: Painting[], category: CategoryKey): Painting[] {
   if (category === "all") return all;
   return all.filter((p) => p.cats.includes(category));
