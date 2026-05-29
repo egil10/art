@@ -77,10 +77,14 @@ export function applyResult(
 ): EloState {
   const k = kFactor(state.games);
   const exp = expected(state.rating, opponent);
-  const rating = Math.max(
-    FLOOR,
-    Math.round(state.rating + k * ((won ? 1 : 0) - exp)),
-  );
+  // Standard Elo delta, but floored to ±1 so a result never reads as "+0".
+  // Once you outrate the famous paintings, k·(1−exp) rounds to zero on a
+  // correct answer — so the rating would sit stale even on a hot streak.
+  // Guaranteeing at least +1 right / −1 wrong keeps it always moving.
+  let delta = Math.round(k * ((won ? 1 : 0) - exp));
+  if (won && delta < 1) delta = 1;
+  if (!won && delta > -1) delta = -1;
+  const rating = Math.max(FLOOR, state.rating + delta);
   const history = [...state.history, rating];
   if (history.length > HISTORY_MAX) {
     history.splice(0, history.length - HISTORY_MAX);
