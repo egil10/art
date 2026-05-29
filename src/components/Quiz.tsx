@@ -453,7 +453,10 @@ export function Quiz({
     () => makeInitial(pool, mode, artistFreq, Date.now() & 0x7fffffff),
   );
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [imgReady, setImgReady] = useState(false);
+  // Which painting's full image has finished loading. Deriving "ready" from
+  // the id (rather than a boolean reset in an effect) avoids a stale frame
+  // where the previous painting still counts as ready.
+  const [loadedId, setLoadedId] = useState<string | null>(null);
   const [reported, setReported] = useState(false);
   const [reportCount, setReportCount] = useState(0);
   const [showCopied, setShowCopied] = useState(false);
@@ -591,7 +594,6 @@ export function Quiz({
         artistFreq,
         seed: Date.now() & 0x7fffffff,
       });
-      setImgReady(false);
       setReported(false);
     }
   }, [category, mode, pool, artistFreq]);
@@ -617,7 +619,6 @@ export function Quiz({
   }, [state.queue, quality]);
 
   useEffect(() => {
-    setImgReady(false);
     setReported(false);
   }, [state.current?.painting.id]);
 
@@ -677,11 +678,6 @@ export function Quiz({
   }, [celebrate]);
 
   const current = state.current;
-  const accuracy = useMemo(
-    () =>
-      state.total === 0 ? 0 : Math.round((state.score / state.total) * 100),
-    [state.score, state.total],
-  );
 
   const handleReport = useCallback(async () => {
     if (!current) return;
@@ -703,6 +699,7 @@ export function Quiz({
   const answered = state.phase === "answered";
   const correct = state.picked === current.target;
   const hero = heroImageProps(current.painting.image, quality);
+  const imgReady = loadedId === current.painting.id;
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 pb-12 pt-3 sm:pt-6">
@@ -782,23 +779,6 @@ export function Quiz({
             )}
             <span className="hidden sm:inline">Review</span>
           </button>
-          <button
-            onClick={toggleQuality}
-            className="pill-glass focus-ring shrink-0"
-            aria-label={`Image quality: ${
-              quality === "high" ? "high definition" : "data saver"
-            } — tap to toggle`}
-            title="Image quality — HD or data saver for slower networks"
-          >
-            {quality === "high" ? (
-              <ImageIcon size={14} strokeWidth={2} />
-            ) : (
-              <Feather size={14} strokeWidth={2} />
-            )}
-            <span className="hidden sm:inline">
-              {quality === "high" ? "HD" : "Lite"}
-            </span>
-          </button>
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5 md:w-[300px] md:justify-between">
@@ -809,9 +789,26 @@ export function Quiz({
             sub={state.total}
             accent={state.streak >= 3}
           />
-          <div className="hidden sm:block">
-            <Stat label="Acc" value={`${accuracy}%`} subtle />
-          </div>
+          <button
+            onClick={toggleQuality}
+            className={
+              "grid h-8 w-8 shrink-0 place-items-center rounded-full border focus-ring transition " +
+              (quality === "saver"
+                ? "border-ink/15 bg-ink text-white"
+                : "border-white/70 bg-white/55 text-ink/70 backdrop-blur hover:bg-white/85 hover:text-ink")
+            }
+            aria-pressed={quality === "saver"}
+            aria-label={`Image quality: ${
+              quality === "high" ? "high definition" : "data saver"
+            } — tap to toggle`}
+            title="Image quality — HD or data saver for slower networks"
+          >
+            {quality === "high" ? (
+              <ImageIcon size={14} strokeWidth={2} />
+            ) : (
+              <Feather size={14} strokeWidth={2} />
+            )}
+          </button>
           <button
             onClick={() => {
               if (reported) setReportsOpen(true);
@@ -870,13 +867,19 @@ export function Quiz({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 key={current.painting.id}
+                // A cached/preloaded image can be `complete` before React
+                // attaches onLoad, so mark it ready on mount too — otherwise the
+                // blur would sit on top forever.
+                ref={(el) => {
+                  if (el?.complete) setLoadedId(current.painting.id);
+                }}
                 src={hero.src}
                 srcSet={hero.srcSet}
                 sizes={hero.sizes}
                 fetchPriority="high"
                 alt=""
-                onLoad={() => setImgReady(true)}
-                onError={() => setImgReady(true)}
+                onLoad={() => setLoadedId(current.painting.id)}
+                onError={() => setLoadedId(current.painting.id)}
                 className={
                   "relative h-full w-full object-contain transition-opacity duration-500 " +
                   (imgReady ? "opacity-100" : "opacity-0")
